@@ -234,7 +234,7 @@ test('empty facility responses do not count as usable airport geometry', () => {
   assertEqual(provider.getDatabaseStats().airportCount, 0, 'empty response should not count as airport coverage');
 });
 
-test('empty diagnostic probe response returns failed normalized outcome', () => {
+test('empty diagnostic probe response records failed normalized outcome', () => {
   const bridge = {
     getSnapshot: () => ({ status: 'running' }),
     requestFacilityAirport: () => immediateResponse({
@@ -246,11 +246,8 @@ test('empty diagnostic probe response returns failed normalized outcome', () => 
     }),
   };
   const provider = createMsfsFacilitiesGeometryProvider(bridge, { logger: null });
-  let outcome: Record<string, any> | null = null;
-
-  provider.probeAirport('KLAX').then((result: Record<string, any>) => {
-    outcome = result;
-  });
+  provider.probeAirport('KLAX');
+  const outcome = provider.getDiagnosticSnapshot().lastOutcome;
 
   assertEqual(outcome?.ok, false, 'empty diagnostic probe should fail');
   assertEqual(outcome?.error, 'empty_facility_response', 'empty diagnostic probe should return explicit reason');

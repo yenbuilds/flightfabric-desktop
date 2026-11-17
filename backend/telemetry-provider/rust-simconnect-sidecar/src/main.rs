@@ -163,7 +163,7 @@ mod sidecar {
         fn mark_telemetry_update(&mut self) {
             self.telemetry_sequence = self.telemetry_sequence.wrapping_add(1);
             self.telemetry_updated_at =
-                Some(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+                Some(protocol::timestamp_iso(protocol::TimestampPrecision::Milliseconds));
             self.telemetry_updated_instant = Some(Instant::now());
         }
 
@@ -325,7 +325,7 @@ mod sidecar {
                         "data": event.dw_data,
                         "source": "rust-sidecar",
                         "backend": "rust",
-                        "timestampIso": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                        "timestampIso": protocol::timestamp_iso(protocol::TimestampPrecision::Seconds),
                     }));
                 }
             }
@@ -346,7 +346,7 @@ mod sidecar {
                     }
                     let mut data_ptr = ptr::addr_of!(obj.dw_data) as *const u8;
                     let received_at =
-                        chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                        protocol::timestamp_iso(protocol::TimestampPrecision::Milliseconds);
                     for item in items {
                         let value = match item.data_type {
                             SIMCONNECT_DATATYPE_INT32 => {
@@ -466,7 +466,7 @@ mod sidecar {
                         "string": text,
                         "source": "rust-sidecar",
                         "backend": "rust",
-                        "timestampIso": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                        "timestampIso": protocol::timestamp_iso(protocol::TimestampPrecision::Seconds),
                     }));
                 }
             }
@@ -2264,7 +2264,7 @@ mod sidecar {
         payload.insert("backend".to_string(), json!("rust"));
         payload.insert(
             "timestampIso".to_string(),
-            json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+            json!(protocol::timestamp_iso(protocol::TimestampPrecision::Seconds)),
         );
         if let Value::Object(details) = details {
             for (key, value) in details {
@@ -2289,7 +2289,7 @@ mod sidecar {
             "backend": "rust",
             "librarySpec": library_spec,
             "error": error,
-            "timestampIso": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "timestampIso": protocol::timestamp_iso(protocol::TimestampPrecision::Seconds),
         }));
     }
 

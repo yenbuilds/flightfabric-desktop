@@ -316,3 +316,61 @@ test('repeated geometry-free attachment DAGs have a traversal bound, not only a 
     if (!result.ok) assert.match(result.reason, /too many references/);
   } finally { h.close(); }
 });
+
+for (const duplicate of [null, 'common', 'attachment'] as const) {
+  test(`modular shared packages resolve unique sources and reject ${duplicate || 'no'} duplicates`, () => {
+    const h = fixture();
+    try {
+      const root = 'SimObjects/Airplanes/Family';
+      const preset = `variant/${root}/presets/vendor/Variant/config`;
+      const selected = h.write(`${preset}/aircraft.cfg`, '[MODULAR_MERGE]\nauto=true');
+      h.write(`${preset}/flight_model.cfg`, '; generated preset');
+      const common = h.write(`shared/${root}/common/config/flight_model.cfg`, '[AIRPLANE_GEOMETRY]\nfuselage_length=120');
+      h.write(`${preset}/attached_objects.cfg`, `[SIM_ATTACHMENT.0]\nalias=Exterior\nattachment_root="${root}/attachments/vendor/Exterior"\n`
+        + `[SIM_ATTACHMENT.1]\nalias=Interior\nattachment_root="${root}/attachments/vendor/Interior"`);
+      const exterior = h.write(`variant/${root}/attachments/vendor/Exterior/config/flight_model.cfg`, geometry.split('[AIRPLANE_GEOMETRY]')[0]);
+      const interior = h.write(`shared/${root}/attachments/vendor/Interior/attachment.cfg`, '[VERSION]\nmajor=1');
+      if (duplicate === 'common') h.write(`overlay/${root}/common/config/flight_model.cfg`, '[AIRPLANE_GEOMETRY]\nfuselage_length=125');
+      if (duplicate === 'attachment') h.write(`overlay/${root}/attachments/vendor/Interior/attachment.cfg`, '[VERSION]\nmajor=1');
+      const result = resolveTaxiAircraftConfig(selected, { packageRoots: [h.packages] });
+      assert.equal(result.ok, duplicate === null, JSON.stringify(result));
+      if (result.ok) {
+        assert.equal(result.wheelbaseM, 12.192);
+        assert.equal(result.lengthM, 36.576);
+        for (const source of [common, exterior, interior]) assert.ok(result.sourceFiles.includes(source));
+        // Changes to the shared source must participate in cache fingerprints.
+        fs.writeFileSync(common, '[AIRPLANE_GEOMETRY]\nfuselage_length=125');
+        clearTaxiAircraftConfigCache();
+        const changed = resolveTaxiAircraftConfig(selected, { packageRoots: [h.packages] });
+        assert.equal(changed.ok, true);
+        if (changed.ok) { assert.equal(changed.lengthM, 38.1); assert.notEqual(changed.fingerprint, result.fingerprint); }
+      } else if (result.ok === false) assert.match(result.reason, /More than one/);
+    } finally { h.close(); }
+  });
+}
+
+for (const override of ['attachment.cfg', 'config/flight_model.cfg']) {
+  test(`sound-only attachment overlays preserve geometry, but an overlaid ${override} is rejected`, () => {
+    const h = fixture();
+    try {
+      // Installed 777 sound packs can contribute only a sound directory under
+      // an existing interior attachment. Directory overlap is not CFG overlap.
+      const root = 'SimObjects/Airplanes/Family';
+      const preset = `variant/${root}/presets/vendor/Variant/config`;
+      const selected = h.write(`${preset}/aircraft.cfg`, '[MODULAR_MERGE]\nauto=true');
+      h.write(`${preset}/attached_objects.cfg`, `[SIM_ATTACHMENT.0]\nalias=Exterior\nattachment_root="${root}/attachments/vendor/Exterior"\n`
+        + `[SIM_ATTACHMENT.1]\nalias=Interior\nattachment_root="${root}/attachments/vendor/Interior"`);
+      h.write(`variant/${root}/attachments/vendor/Exterior/config/flight_model.cfg`, geometry);
+      const interior = h.write(`variant/${root}/attachments/vendor/Interior/attachment.cfg`, '[VERSION]\nmajor=1');
+      h.write(`sound-pack/${root}/attachments/vendor/Interior/sound/sound.xml`, '<SoundInfo/>');
+      const result = resolveTaxiAircraftConfig(selected, { packageRoots: [h.packages] });
+      assert.equal(result.ok, true, JSON.stringify(result));
+      if (result.ok) { assert.equal(result.wheelbaseM, 12.192); assert.ok(result.sourceFiles.includes(interior)); }
+      h.write(`sound-pack/${root}/attachments/vendor/Interior/${override}`, override === 'attachment.cfg' ? '[VERSION]\nmajor=1' : geometry);
+      clearTaxiAircraftConfigCache();
+      const conflict = resolveTaxiAircraftConfig(selected, { packageRoots: [h.packages] });
+      assert.equal(conflict.ok, false, 'a real selected-source overlay must still be rejected');
+      if (conflict.ok === false) assert.match(conflict.reason, /More than one.*source|overlaid/);
+    } finally { h.close(); }
+  });
+}

@@ -19,8 +19,9 @@ export function createPushbackControls({ send, changed, complete = () => {}, now
       : completed ? TAXI_COPY.complete
       : !context.enabled ? context.unavailableReason || 'Pushback is unavailable on this connection.'
       : !destination ? 'Choose your departure airport and runway.'
-      : !fresh() ? 'Waiting for live pushback status.' : preview.loading ? 'Finding pushback path…'
-      : preview.error || state.unavailableReason || (preview.data && !preview.fresh ? 'Waiting for live pushback preview.' : state.reason));
+      : !fresh() ? 'Waiting for live pushback status.'
+      : preview.error || state.unavailableReason || (preview.loading && !preview.data ? 'Finding pushback path…'
+        : preview.data && !preview.fresh ? 'Waiting for live pushback preview.' : state.reason));
     return { state, active: active(), owned, pending, fresh: fresh(), completed, canStart, reason: reason || '' };
   }
   const publish = () => changed(snapshot());
@@ -71,6 +72,7 @@ export function createPushbackControls({ send, changed, complete = () => {}, now
     if (changedAircraft || leaving) {
       const lostActive = owned && active() && !normalized.connected;
       reset();
+      if (changedAircraft) { error = ''; statusError = false; }
       if (lostActive) error = 'Connection lost. Pushback will stop; take control in the cockpit.';
     }
     if (!active() && (previous.icao !== context.icao || previous.runway !== context.runway || (!wasUsable && usable()))) error = '';

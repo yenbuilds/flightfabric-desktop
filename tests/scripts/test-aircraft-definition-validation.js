@@ -47,7 +47,8 @@ test('source and compiled preflight validate the complete catalogue without hist
   // Preserve the frozen migration baseline and count the separately reviewed
   // additions, whose exact definitions the integration parity tests also check.
   const expected = { ...baseline.totals };
-  for (const addition of Object.values(require('../fixtures/requested-aircraft-controls-20261017.json'))) {
+  for (const addition of [...Object.values(require('../fixtures/requested-aircraft-controls-20261017.json')),
+    require('../fixtures/pmdg-777-heading-select-20261116.json')]) {
     for (const key of ['fields', 'actions']) expected[key] += Object.keys(addition[key]).length;
   }
   for (const key of ['integrations', 'profiles', 'fields', 'actions']) assert.equal(source[key], expected[key], key);

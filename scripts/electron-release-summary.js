@@ -260,13 +260,13 @@ async function packageInstallerZip({ version, installer, sha256, outDir }) {
   const installerStat = assertSafeRegularFile(installer, 'Installer');
   if (installerStat.size <= 0) throw new Error('Installer is empty');
   if (await sha256File(installer) !== sha256) throw new Error('Installer SHA-256 does not match the recorded hash');
-  assertSafeDirectory(path.dirname(outDir), 'ZIP output parent');
   for (const protectedDir of [path.dirname(installer), path.join(ROOT, 'dist', 'electron')]) {
     const relative = path.relative(protectedDir, outDir);
     if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
       throw new Error('ZIP output must be outside the installer directory and dist/electron');
     }
   }
+  assertSafeDirectory(path.dirname(outDir), 'ZIP output parent');
   // Exclusive directory creation protects previous packages, including linked paths.
   fs.mkdirSync(outDir);
   const archiveName = publishedInstallerArchiveName(version);

@@ -28,8 +28,9 @@ function projectPreExecutionCatalogue(definition, expectedData = module.exports.
   assertAndRemove(projected, 'catalogue', expectedData.catalogue[definition.id], 'reviewed catalogue metadata');
   assertAndRemove(projected, 'behavior', expectedData.behavior[definition.id], 'reviewed execution behavior');
   assertAndRemove(projected.presentation, 'cockpitLightingGroups', expectedData.lighting[definition.id], 'reviewed lighting groups');
-  const additions = expectedData.requestedControls[definition.id];
-  if (additions) {
+  for (const additions of [expectedData.requestedControls[definition.id],
+    definition.id === 'pmdg-777' ? expectedData.headingSelect777 : null]) {
+    if (!additions) continue;
     for (const section of ['fields', 'actions']) {
       for (const [key, value] of Object.entries(additions[section])) {
         assertAndRemove(projected[section], key, value, `${definition.id}/${key}: reviewed control addition`);
@@ -80,9 +81,9 @@ function projectPreExecutionCatalogue(definition, expectedData = module.exports.
   return projected;
 }
 
-function projectPreSurfaceCorrectionProfile(profile, requestedControls = require('../fixtures/requested-aircraft-controls-20261017.json')) {
+function projectPreSurfaceCorrectionProfile(profile, expectedData = module.exports.executionBaseline) {
   const projected = structuredClone(profile);
-  for (const addition of Object.values(requestedControls)) {
+  for (const addition of Object.values(expectedData.requestedControls)) {
     const index = projected.provenance?.sources?.findIndex(source => source.name === addition.provenance.name) ?? -1;
     if (index >= 0) {
       require('node:assert/strict').deepEqual(projected.provenance.sources[index], addition.provenance, 'reviewed control provenance');
@@ -92,6 +93,16 @@ function projectPreSurfaceCorrectionProfile(profile, requestedControls = require
   if (!['pmdg-777', 'pmdg-777-200er', 'pmdg-777-200lr', 'pmdg-777f'].includes(profile.id)) return projected;
   const source = projected.provenance?.sources?.find(item => item.name === 'PMDG 777 MSFS SDK manual and installed sample');
   if (!source) return projected; // Raw variants inherit this provenance.
+  const assert = require('node:assert/strict');
+  const addition = expectedData.headingSelect777;
+  const headingSource = projected.provenance.sources.findIndex(item => item.name === addition.provenance.name);
+  assert.ok(headingSource >= 0, 'reviewed 777 heading-select provenance is present');
+  assert.deepStrictEqual(projected.provenance.sources[headingSource], addition.provenance, 'reviewed 777 heading-select provenance');
+  projected.provenance.sources.splice(headingSource, 1);
+  const knownIssues = projected.provenance.verification.knownIssues;
+  const headingIssue = knownIssues.indexOf(addition.knownIssue);
+  assert.ok(headingIssue >= 0, 'reviewed 777 heading-select limitation is present');
+  knownIssues.splice(headingIssue, 1);
   const before = '0/100/50. Existing arming, flap and autobrake detents are preserved. See '
     + 'docs/APPROACH-CONTROLS-AIRCRAFT-COVERAGE.md; live validation is pending. Brightness correction';
   const after = '0/100/75. The HALF readback was corrected on 2026-10-17 using independent live SDK '
@@ -106,6 +117,9 @@ function projectPreSurfaceCorrectionProfile(profile, requestedControls = require
 
 const executionBaseline = {
   requestedControls: require('../fixtures/requested-aircraft-controls-20261017.json'),
+  // Independently reviewed SDK push/release and explicit live-acceptance limit;
+  // the original migration fingerprints remain unchanged.
+  headingSelect777: require('../fixtures/pmdg-777-heading-select-20261116.json'),
   catalogue: require('../fixtures/aircraft-catalogue-exports-baseline.json').catalogues,
   behavior: require('../fixtures/aircraft-execution-behavior-baseline.json'),
   lighting: require('../fixtures/cockpit-lighting-groups-baseline.json'),

@@ -8,6 +8,7 @@ import type { TaxiGraph } from '../../autotaxi/route.js';
 import { createAutotaxi } from '../../telemetry-provider/aircraft-autotaxi.js';
 
 const { createMsfsFacilitiesGeometryProvider } = require('../../landing/msfs-facilities-geometry-provider.js');
+const { SimConnectTelemetryProvider } = require('../../telemetry-provider/simconnect-telemetry-provider.js');
 
 const standard = (engineCount = 2): TaxiAxisConfig => ({ family: 'generic', engineCount, maxThrottle: 0.18 });
 const fenix: TaxiAxisConfig = { family: 'fenix-a32x', engineCount: 2, maxThrottle: 0.18 };
@@ -104,7 +105,7 @@ function facilityAirport(icao: string) {
   }] };
 }
 
-function fixture(family: TaxiFamily = 'generic', engineCount = 2) {
+function fixture(family: TaxiFamily = 'generic', engineCount = 2, readOnly = false) {
   let now = 10000;
   let profileKey = `bundled/msfs/${family === 'fenix-a32x' ? 'fenix-a320' : family}`;
   let model: TaxiAircraftConfigResult = { ok: true, identity: 'C:/fixture/aircraft.cfg', fingerprint: 'fixture-geometry', sourceFiles: [],
@@ -148,7 +149,7 @@ function fixture(family: TaxiFamily = 'generic', engineCount = 2) {
   };
   const profiles: any = { getActiveProfileId: () => profileKey, getActiveProfileRevision: () => 1, getAircraftSpecificConfig: () => config,
     getActiveProfile: () => ({ aircraft: { engines: 2 }, engineCount: 2 }) };
-  const session = createAutotaxi(provider, profiles, () => now, { resolveModel: () => model });
+  const session = createAutotaxi(provider, profiles, () => now, { resolveModel: () => model, readOnly });
   return { session, provider, bridge, profiles, values, nativeTimes, lvarValues, lvarTimes, lvars, sdk, events, variables, actions, config,
     request: (operation = 'start') => ({ operation, icao: 'TEST', runway: '09', profileKey, profileRevision: 1 }),
     advance: (ms = 250) => { now += ms; }, setModel: (next: TaxiAircraftConfigResult) => { model = next; },
@@ -606,3 +607,40 @@ test('losing Fenix throttle transport during a session faults while still attemp
     assert(!after.some(([name]) => name.startsWith('THROTTLE')), 'the standard throttle path cannot substitute for the missing custom path');
   } finally { await f.session.dispose(); }
 });
+
+for (const readOnly of [true, false]) {
+  test(`${readOnly ? 'manual guidance' : 'Autotaxi'} joins Facilities warmup and discards cancelled consumers`, async () => {
+    const f = fixture('generic', 2, readOnly);
+    let finish!: (message: Record<string, any>) => void;
+    let calls = 0;
+    const facilities = createMsfsFacilitiesGeometryProvider({
+      getSnapshot: () => ({ status: 'running' }),
+      requestFacilityAirport: () => { calls++; return new Promise(resolve => { finish = resolve; }); },
+    }, { logger: null });
+    f.provider._msfsFacilitiesGeometryProvider = facilities;
+    let connected = true;
+    const client = {};
+    f.provider._taxiGuidanceSessions = new WeakMap([[client, f.session]]);
+    f.provider._autotaxi = f.session;
+    const request = (message: Record<string, any>) => SimConnectTelemetryProvider.prototype[
+      readOnly ? 'requestTaxiGuidance' : 'requestAutotaxi'].call(f.provider, message, client, () => connected);
+    try {
+      facilities.prefetchAirport('TEST');
+      const waiting = request(f.request('preview'));
+      const rejected = assert.rejects(waiting, /changed|cancelled/);
+      const independent = facilities.loadTaxiAirport('TEST', '09');
+      assert.equal(calls, 1);
+      connected = false;
+      finish(facilityAirport('TEST'));
+      await rejected;
+      assert.equal((await independent).graph.complete, true, 'retiring one viewer must not cancel another caller');
+      assert.equal(f.session.state().sceneKey, null);
+      connected = true;
+      const retry = request(f.request('preview'));
+      assert.equal(calls, 2, 'a later explicit preview still requests fresh geometry');
+      finish(facilityAirport('TEST'));
+      assert.ok((await retry).sceneKey);
+      assert.deepEqual([f.events, f.variables, f.actions], [[], [], []]);
+    } finally { await f.session.dispose(); }
+  });
+}

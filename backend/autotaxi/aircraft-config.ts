@@ -172,15 +172,20 @@ export function resolveTaxiAircraftConfig(aircraftCfgPath: string, options: Taxi
     const parsedFiles = new Map<string, Sections>();
     let totalBytes = 0;
     let attachmentVisits = 0;
-    const read = (file: string, optional = false): Sections | null => {
+    const read = (file: string, optional = false, shared = false): Sections | null => {
       // The VFS can overlay flight_model.cfg without also supplying aircraft.cfg.
       // Check every source, including optional sources absent in this package.
       const matches = vfsMatches(path.relative(packageRoot(file), file), packageRoot(file));
       if (matches.length > 1) fail('More than one installed package defines a selected aircraft configuration source.');
       if (!fs.existsSync(file)) {
-        if (matches.length) fail('A selected aircraft configuration source is overlaid by another package.');
-        if (optional) return null;
-        return fail('A selected aircraft configuration file is unavailable.');
+        // Modular common configuration may be supplied by a shared package.
+        // Ordinary selected files still reject unexpected package overlays.
+        if (shared && matches.length === 1) file = matches[0];
+        else {
+          if (matches.length) fail('A selected aircraft configuration source is overlaid by another package.');
+          if (optional) return null;
+          return fail('A selected aircraft configuration file is unavailable.');
+        }
       }
       const real = fs.realpathSync(file);
       airplanesRoot(real);
@@ -278,10 +283,16 @@ export function resolveTaxiAircraftConfig(aircraftCfgPath: string, options: Taxi
       }
       const target = path.resolve(packageRoot(origin), asPath(relative));
       if (!inside(target, airplanesRoot(origin))) fail('Aircraft attachment path is outside its aircraft package.');
-      if (fs.existsSync(target) && !inside(fs.realpathSync(target), fs.realpathSync(airplanesRoot(origin)))) {
-        fail('Aircraft attachment path leaves its aircraft package.');
+      if (fs.existsSync(target)) {
+        if (!inside(fs.realpathSync(target), fs.realpathSync(airplanesRoot(origin)))) {
+          fail('Aircraft attachment path leaves its aircraft package.');
+        }
+        // Sound-only overlays can share this directory. read() checks each
+        // selected CFG for ambiguity instead of rejecting directory overlap.
+        return target;
       }
-      return target;
+      // A missing static attachment root may belong to a shared package.
+      return resolveVfs(relative, packageRoot(origin));
     }
     function selectedAttachments(sections: Sections | null, origin: string, visited: Set<string>, depth: number, contributors: Set<string>): Geometry {
       const combined: Geometry = new Map();
@@ -348,7 +359,7 @@ export function resolveTaxiAircraftConfig(aircraftCfgPath: string, options: Taxi
       if (preset) {
         registerModularContacts(real, combined, contributors);
         const commonPath = path.join(asPath(preset[1]), 'common', 'config', 'flight_model.cfg');
-        const common = read(commonPath, true);
+        const common = read(commonPath, true, true);
         const commonGeometry = relevantGeometry(common ?? new Map());
         registerModularContacts(commonPath, commonGeometry, contributors);
         for (const [name, value] of commonGeometry) combined.set(name, value);

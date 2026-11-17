@@ -254,13 +254,25 @@ onBeforeUnmount(() => { clearInterval(timer); controller.dispose(); unsubscribe.
   .cdu-key { transition: none; }
 }
 @media (max-width: 600px), (max-height: 500px) {
-  .cdu-backdrop { padding: 0; }
+  .cdu-backdrop { padding: 0; top: var(--ff-visual-viewport-offset-top, 0px); height: var(--ff-visual-viewport-height, 100dvh); }
   .cdu-dialog { max-width: none; max-height: var(--ff-visual-viewport-height, 100dvh); height: var(--ff-visual-viewport-height, 100dvh); border: 0; border-radius: 0; box-shadow: none; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .cdu-header { min-height: 44px; padding: 0 .5rem; }
   .cdu-integrated .cdu-content { gap: 2px; padding: 4px 6px 6px; }
   .cdu-toolbar :is(select, button) { height: 36px; min-height: 36px !important; padding: .25rem .4rem; }
   .cdu-display-area { gap: 3px; }
   .cdu-function-keys .cdu-key { padding: 0; font-size: .65rem; line-height: 1; }
+}
+/* Fit the complete keypad above phone browser controls. Reserve its minimum
+   rows before giving the display extra height; shorter panels retain scrolling.
+   Container height excludes the dialog's safe-area padding. */
+@media (max-width: 600px) {
+  @container cdu (min-height: 690px) {
+    .cdu-integrated .cdu-content {
+      --cdu-phone-display-min: 224px;
+      --cdu-phone-key-min: 32px;
+      --cdu-phone-keypad-min: calc((var(--cdu-function-rows) + var(--cdu-entry-rows)) * 35px + 3px);
+    }
+  }
 }
 /* Use the actual panel height, including browser chrome and safe-area space.
    Very short, narrow screens cannot fit a readable display plus a keypad

@@ -126,6 +126,7 @@ const afdsModes = [
   { id: 'flightGuidance.lnav', label: 'LNAV', control: 'engage', actionPrefix: 'afds.lnav', commandId: 'flightGuidance.lnav.engage' },
   { id: 'flightGuidance.vnav', label: 'VNAV', control: 'engage', actionPrefix: 'afds.vnav', commandId: 'flightGuidance.vnav.engage' },
   { id: 'flightGuidance.flch', label: 'FLCH', control: 'engage', actionPrefix: 'afds.levelChange', commandId: 'flightGuidance.flightLevelChange.engage' },
+  { id: 'flightGuidance.headingSelect', label: 'HDG/TRK SEL', control: 'press', actionPrefix: 'afds.headingSelect', commandId: 'flightGuidance.headingSelect.engage', groupId: 'mcp.heading' },
   { id: 'flightGuidance.headingHold', label: 'HDG HOLD', control: 'engage', actionPrefix: 'afds.headingHold', commandId: 'flightGuidance.headingHold.engage' },
   { id: 'flightGuidance.verticalSpeed', label: 'V/S FPA', control: 'engage', actionPrefix: 'afds.verticalSpeed', commandId: 'flightGuidance.verticalSpeed.engage' },
   { id: 'flightGuidance.altitudeHold', label: 'ALT HOLD', control: 'engage', actionPrefix: 'afds.altitudeHold', commandId: 'flightGuidance.altitudeHold.engage' },
@@ -717,7 +718,7 @@ function requestMcpAction(field) {
 }
 
 function afdsActionId(mode) {
-  if (mode.control === 'engage') return `${mode.actionPrefix}.engage`;
+  if (mode.control === 'engage' || mode.control === 'press') return `${mode.actionPrefix}.engage`;
   if (mode.control === 'toggle') return `${mode.actionPrefix}.${value(mode.id) === true ? 'off' : 'on'}`;
   return '';
 }
@@ -726,12 +727,13 @@ function afdsDisabled(mode) {
   const actionId = afdsActionId(mode);
   return !actionId
     || sdkSourceStatus.value !== 'connected'
-    || !hasValue(mode.id)
+    || (mode.control !== 'press' && !hasValue(mode.id))
     || (mode.control === 'engage' && value(mode.id) === true)
     || (pmdg777CommandCatalogueActive() && mode.commandId
       ? !props.isCommandSupported(mode.commandId)
       : !actionSupported(actionId))
-    || groupPending(mode.id);
+    || (mode.commandId && aircraftControls.isCommandPending(mode.commandId))
+    || groupPending(mode.groupId || mode.id);
 }
 
 function requestAfdsAction(mode) {
@@ -739,9 +741,9 @@ function requestAfdsAction(mode) {
   if (afdsDisabled(mode)) return false;
   if (pmdg777CommandCatalogueActive() && mode.commandId) {
     const input = mode.control === 'toggle' ? { value: value(mode.id) !== true } : {};
-    return props.requestCommand(mode.commandId, mode.id, input);
+    return props.requestCommand(mode.commandId, mode.groupId || mode.id, input);
   }
-  return props.requestAction(actionId, mode.id);
+  return props.requestAction(actionId, mode.groupId || mode.id);
 }
 
 function controlValue(control) {
@@ -929,7 +931,7 @@ function indicatorClass(id, tone = 'positive') {
       </div>
 
       <div class="mt-2 flex flex-wrap gap-1.5">
-        <button v-for="mode in afdsModes" :key="mode.id" type="button" class="rounded border px-2.5 py-1.5 text-[10px] font-semibold tracking-wide disabled:cursor-not-allowed disabled:opacity-60" :class="indicatorClass(mode.id)" :data-aircraft-action="afdsActionId(mode) || undefined" :disabled="afdsDisabled(mode)" @click="requestAfdsAction(mode)">{{ mode.label }} <span class="opacity-70">{{ valueText(mode.id) }}</span></button>
+        <button v-for="mode in afdsModes" :key="mode.id" type="button" class="rounded border px-2.5 py-1.5 text-[10px] font-semibold tracking-wide disabled:cursor-not-allowed disabled:opacity-60" :class="mode.control === 'press' ? actionButtonClass(false) : indicatorClass(mode.id)" :data-aircraft-action="afdsActionId(mode) || undefined" :disabled="afdsDisabled(mode)" @click="requestAfdsAction(mode)">{{ mode.label }} <span v-if="mode.control !== 'press'" class="opacity-70">{{ valueText(mode.id) }}</span></button>
       </div>
 
       <p class="mt-2 text-[10px] leading-relaxed text-gray-500">The official 777 SDK does not expose 737-style NAV frequency or course-selector controls, so those remain intentionally unavailable.</p>

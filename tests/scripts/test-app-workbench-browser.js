@@ -19,7 +19,7 @@ async function browser() {
   const { app, BrowserWindow } = require('electron');
   const startedAt = Date.now();
   const reportPhase = phase => console.log(`[workbench ${((Date.now() - startedAt) / 1000).toFixed(1)}s] ${phase}`);
-  app.setPath('userData', path.join(OUTPUT, `user-data-${process.pid}`));
+  app.setPath('userData', process.env.FF_WORKBENCH_USER_DATA);
   app.disableHardwareAcceleration();
   for (const option of ['disable-gpu', 'disable-gpu-compositing', 'disable-gpu-sandbox']) app.commandLine.appendSwitch(option);
   app.commandLine.appendSwitch('force-device-scale-factor', '1');
@@ -2021,6 +2021,35 @@ async function browser() {
   }
 }
 
+async function runBrowserProcess(url, { spawn = require('node:child_process').spawn, timeoutMs = 360000,
+  schedule = setTimeout, cancel = clearTimeout } = {}) {
+  fs.mkdirSync(OUTPUT, { recursive: true });
+  assert.equal(fs.realpathSync(OUTPUT), OUTPUT, 'browser output must not be redirected');
+  const userData = fs.mkdtempSync(path.join(OUTPUT, 'user-data-'));
+  let timer;
+  try {
+    const env = { ...process.env, FF_WORKBENCH_TEST_URL: url, FF_WORKBENCH_USER_DATA: userData };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const child = spawn(require('../../electron/node_modules/electron'), [__filename], { env, cwd: ROOT, windowsHide: true, stdio: 'inherit' });
+    let timedOut = false, spawnError;
+    const closed = new Promise(resolve => {
+      child.once('error', error => { spawnError = error; });
+      child.once('close', resolve);
+    });
+    timer = schedule(() => { timedOut = true; child.kill(); }, timeoutMs);
+    const code = await closed;
+    if (spawnError) throw spawnError;
+    assert.equal(timedOut, false, `full application workbench browser checks exceeded ${timeoutMs / 1000}s`);
+    assert.equal(code, 0, 'full application workbench browser checks');
+  } finally {
+    if (timer !== undefined) cancel(timer);
+    // The parent owns this unique profile and waits for Electron to close before
+    // deleting it, including failed checks, spawn errors and timeout termination.
+    assert.equal(fs.realpathSync(userData), userData, 'browser profile must not be redirected');
+    fs.rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+}
+
 async function main() {
   fs.mkdirSync(OUTPUT, { recursive: true });
   const css = fs.readFileSync(path.join(ROOT, 'frontend-dist/tailwind.css'), 'utf8');
@@ -2053,19 +2082,12 @@ async function main() {
     server: { host: '127.0.0.1', port: 0, watch: null } });
   await server.listen();
   try {
-    const env = { ...process.env, FF_WORKBENCH_TEST_URL: `http://127.0.0.1:${server.httpServer.address().port}/tests/fixtures/app-workbench-browser.html` };
-    delete env.ELECTRON_RUN_AS_NODE;
-    const child = require('node:child_process').spawn(require('../../electron/node_modules/electron'), [__filename], { env, cwd: ROOT, windowsHide: true, stdio: 'inherit' });
     // Eight layouts plus native input, voice lifecycle, authorization recovery
     // and Settings navigation run in one browser session. Allow cold-run
     // headroom for the complete suite; individual operation bounds stay intact.
-    const timeoutMs = 360000;
-    let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
-    const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('exit', resolve); });
-    clearTimeout(timer);
-    assert.equal(timedOut, false, `full application workbench browser checks exceeded ${timeoutMs / 1000}s`);
-    assert.equal(code, 0, 'full application workbench browser checks');
+    await runBrowserProcess(`http://127.0.0.1:${server.httpServer.address().port}/tests/fixtures/app-workbench-browser.html`);
   } finally { await server.close(); }
 }
-(process.versions.electron ? browser() : main()).catch(error => { console.error(error); process.exit(1); });
+// Electron's main module is its bootstrap, not this entry file.
+if (process.versions.electron || require.main === module) (process.versions.electron ? browser() : main()).catch(error => { console.error(error); process.exit(1); });
+module.exports = { runBrowserProcess };

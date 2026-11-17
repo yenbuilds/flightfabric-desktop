@@ -29,14 +29,35 @@ async function browser() {
       for (const [field, action, phrase] of [
         [is737 ? 'afds.headingSelect' : 'flightGuidance.headingHold', is737 ? 'afds.headingSelect.engage' : 'afds.headingHold.engage', is737 ? 'engage heading select' : 'engage heading hold'],
         [is737 ? 'afds.approach' : 'flightGuidance.approach', 'afds.approach.engage', 'approach'],
+        ...(!is737 ? [[null, 'afds.headingSelect.engage', 'engage heading select']] : []),
       ]) {
         const selector = `[data-aircraft-action="${action}"]`;
-        await evaluate(`familiesTest.clear(); await familiesTest.publish(false, { '${field}': false });
+        const statePatch = JSON.stringify(field ? { [field]: false } : {
+          'flightGuidance.headingHold': true, 'flightGuidance.headingMode': 'HDG', 'flightGuidance.headingDeg': 270,
+        });
+        await evaluate(`familiesTest.clear(); await familiesTest.publish(false, ${statePatch});
           for (let el=document.querySelector('${selector}'); el; el=el.parentElement) if (el.tagName==='DETAILS') el.open=true;
           await familiesTest.tick(); document.querySelector('${selector}').scrollIntoView({block:'center'});`);
         assert.equal(await evaluate(`return document.querySelector('${selector}').disabled;`), false, `${profile} ${action} ready`);
+        if (!field) {
+          assert.equal(await evaluate(`return document.querySelector('${selector}').textContent.trim();`), 'HDG/TRK SEL', 'momentary request has no invented ON/OFF indication');
+          if (profile === 'pmdg-777') {
+            await evaluate('await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));');
+            await wait(100);
+            fs.writeFileSync(path.join(OUT, `heading-select-${width}.png`), (await win.webContents.capturePage()).toPNG());
+          }
+        }
         const voice = await evaluate(`return familiesTest.voice('${phrase}');`);
         assert.equal(voice.ok, true, `${profile}: ${phrase}`);
+        if (!is737) {
+          const sentBeforeVoice = await evaluate('return familiesTest.sent.length;');
+          await evaluate(`familiesTest.controls.setCommandPending('aircraft-command:${voice.commandId}'); await familiesTest.tick();`);
+          assert.equal(await evaluate(`return document.querySelector('${selector}').disabled;`), true, `${profile}: a pending voice request also disables ${action}`);
+          await evaluate(`document.querySelector('${selector}').click(); await familiesTest.tick();`);
+          assert.equal(await evaluate('return familiesTest.sent.length;'), sentBeforeVoice, 'button cannot dispatch over a pending voice request');
+          await evaluate('familiesTest.clear(); await familiesTest.tick();');
+          assert.equal(await evaluate(`return document.querySelector('${selector}').disabled;`), false, 'button recovers after the voice request settles');
+        }
         const before = await evaluate('return familiesTest.sent.length;');
         const point = await evaluate(`const r=document.querySelector('${selector}').getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2};`);
         for (const type of ['mousePressed', 'mouseReleased']) await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type, ...point, button: 'left', clickCount: 1 });
@@ -44,8 +65,12 @@ async function browser() {
         assert.equal(await evaluate('return familiesTest.sent.length;'), before + 1, `${profile} native ${action} click`);
         assert.deepEqual(await evaluate('return familiesTest.sent.at(-1);'), { type: 'canonical', commandId: voice.commandId, input: voice.input });
         assert.equal(await evaluate(`return document.querySelector('${selector}').disabled;`), true, 'pending engagement rejects duplicates');
-        await evaluate(`familiesTest.clear(); await familiesTest.publish(true, { '${field}': false });`);
+        await evaluate(`familiesTest.clear(); await familiesTest.publish(true, ${statePatch});`);
         assert.equal(await evaluate(`return document.querySelector('${selector}').disabled;`), true, 'unavailable readback blocks engagement');
+        if (!field) {
+          await evaluate('familiesTest.clear(); await familiesTest.publish(); familiesTest.controls.aircraftCommandCatalogue.commands = {}; familiesTest.props.actionCapabilities = {}; await familiesTest.tick();');
+          assert.equal(await evaluate(`return document.querySelector('${selector}').disabled;`), true, 'missing command capability blocks SEL');
+        }
       }
     }
     for (const width of [1180, 390, 320]) {

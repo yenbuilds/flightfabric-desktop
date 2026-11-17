@@ -3,12 +3,12 @@
 export function createDeparturePreview({ send, changed, now = Date.now, setTimeout, clearTimeout }) {
   const prefix = 'departure-' + now() + '-' + Math.random().toString(36).slice(2) + '-';
   let context = {}, key = '', revision = 0, sequence = 0, pending = null, timer = null;
-  let data = null, error = '', lastReply = -Infinity, nextAt = 0, destroyed = false;
+  let data = null, error = '', previewError = '', lastReply = -Infinity, nextAt = 0, destroyed = false;
   const usable = () => context.connected && context.visible !== false && context.enabled !== false
     && context.profileKey && /^[A-Z0-9]{3,8}$/.test(context.icao) && /^(0?[1-9]|[12][0-9]|3[0-6])[LRC]?$/.test(context.runway);
   const fresh = () => Boolean(data?.aircraft) && now() - lastReply < 2000;
-  function publish() { changed({ data, error, loading: pending?.operation === 'preview', fresh: fresh() }); }
-  function reset() { revision++; pending = null; data = null; error = ''; lastReply = -Infinity; nextAt = now() + 400; publish(); }
+  function publish() { changed({ data, error: error || previewError, loading: pending?.operation === 'preview', fresh: fresh() }); }
+  function reset() { revision++; pending = null; data = null; error = ''; previewError = ''; lastReply = -Infinity; nextAt = now() + 400; publish(); }
   function update(next) {
     context = { ...next, icao: String(next.icao || '').trim().toUpperCase(), runway: String(next.runway || '').trim().toUpperCase() };
     const nextKey = [context.profileKey, context.profileRevision, context.icao, context.runway, usable()].join(':');
@@ -30,7 +30,10 @@ export function createDeparturePreview({ send, changed, now = Date.now, setTimeo
     if (destroyed || !usable()) return;
     if (usable()) {
       if (pending && now() - pending.at > (pending.operation === 'preview' ? 12000 : 2000)) {
-        error = 'Pushback preview unavailable. Retrying…'; pending = null; nextAt = now() + 3000;
+        const message = 'Pushback preview unavailable. Retrying…';
+        if (pending.operation === 'preview') { previewError = message; error = ''; }
+        else error = message;
+        pending = null; nextAt = now() + 3000;
       }
       if (!pending && now() >= nextAt) {
         // An expired pushback start plan can still locate the aircraft on its
@@ -48,8 +51,13 @@ export function createDeparturePreview({ send, changed, now = Date.now, setTimeo
   function receive(message) {
     if (destroyed || !usable() || message?.type !== 'toolbarTaxiState' || !pending
       || pending.revision !== revision || pending.requestId !== message.requestId) return false;
-    const requestedAt = pending.at; pending = null;
-    if (message.ok !== true) { error = message.error || 'Pushback preview unavailable.'; lastReply = -Infinity; nextAt = now() + 5000; publish(); return true; }
+    const { at: requestedAt, operation } = pending; pending = null;
+    if (message.ok !== true) {
+      const failure = message.error || 'Pushback preview unavailable.';
+      if (operation === 'preview') { previewError = failure; error = ''; }
+      else error = failure;
+      lastReply = -Infinity; nextAt = now() + 5000; publish(); return true;
+    }
     if (message.currentProfileKey !== context.profileKey || message.currentProfileRevision !== context.profileRevision) { reset(); return true; }
     const preview = message.pushbackPreview;
     if (preview && preview.icao === context.icao && preview.runway.replace(/^0(?=\d)/, '') === context.runway.replace(/^0(?=\d)/, '')) {
@@ -58,7 +66,15 @@ export function createDeparturePreview({ send, changed, now = Date.now, setTimeo
         scene: message.scene || previous?.scene || null, route: message.preview || previous?.route || null };
       if (!data.pushbackPreview.points || !data.route) data = null;
     } else data = null;
-    lastReply = requestedAt; error = ''; nextAt = now() + (['connecting', 'pushing', 'stopping'].includes(preview?.phase) ? 250 : 750); publish();
+    lastReply = requestedAt; error = '';
+    // A healthy status reply can locate an old plan without repairing a failed
+    // refresh. Keep that failure until planning recovers or pushback recapture
+    // no longer applies (the aircraft is moving or pushback has started).
+    const speed = data?.aircraft?.speedKts;
+    if (operation === 'preview' || (fresh() && (preview?.valid
+      || ['connecting', 'pushing', 'stopping', 'complete'].includes(preview?.phase)
+      || (Number.isFinite(speed) && speed > 0.5)))) previewError = '';
+    nextAt = now() + (['connecting', 'pushing', 'stopping'].includes(preview?.phase) ? 250 : 750); publish();
     return true;
   }
   return { update, receive, reset, destroy() { destroyed = true; if (timer !== null) clearTimeout(timer); timer = null; reset(); } };

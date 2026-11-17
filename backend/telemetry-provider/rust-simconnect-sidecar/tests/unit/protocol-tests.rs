@@ -2,6 +2,22 @@
     use super::*;
 
     #[test]
+    fn timestamp_wire_format_preserves_utc_precision_without_rounding() {
+        // Fixed instants check the old wire contract, including leap-day/date
+        // rollover and pre-epoch values; no host timezone or timing thresholds.
+        for (input, seconds, millis) in [
+            ("2026-11-18T00:00:00Z", "2026-11-18T00:00:00Z", "2026-11-18T00:00:00.000Z"),
+            ("2024-02-29T23:59:59.999999999Z", "2024-02-29T23:59:59Z", "2024-02-29T23:59:59.999Z"),
+            ("2025-01-01T11:00:00.001999999+11:00", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00.001Z"),
+            ("1969-12-31T23:59:59.999999999Z", "1969-12-31T23:59:59Z", "1969-12-31T23:59:59.999Z"),
+        ] {
+            let timestamp: jiff::Timestamp = input.parse().unwrap();
+            assert_eq!(format_timestamp(timestamp, TimestampPrecision::Seconds), seconds);
+            assert_eq!(format_timestamp(timestamp, TimestampPrecision::Milliseconds), millis);
+        }
+    }
+
+    #[test]
     fn command_deserialization_preserves_wire_names_and_defaults() {
         let command: Command = serde_json::from_str(
             r#"{

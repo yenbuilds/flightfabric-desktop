@@ -37,6 +37,7 @@ const test = { controls, specific, props, sent, tick: nextTick,
       'controls.speedbrakePosition': 1, 'flightControls.speedbrakePercent': 0, 'flightControls.speedbrakeArmed': false,
       'flightControls.flapHandleIndex': 3, 'gear.autobrakeMode': 'off', 'controls.flapsLabel': '5', 'controls.autobrakeMode': 'off', 'controls.speedbrakePercent': 0, ...patch };
     props.values = values; props.unavailable = stale ? Object.keys(values) : [];
+    props.sourceStatuses = { sdk: stale ? 'stale' : 'connected' };
     specific.ingestState({ profileKey: active.aircraftCommands.profileKey, profileRevision: active.aircraftCommands.profileRevision,
       templateId: active.aircraftIntegration.templateId, available: true, sourceStatus: { overall: 'connected' }, values, unavailable: [], updatedAt: now,
       valueUpdatedAt: Object.fromEntries(Object.keys(values).map(id => [id, stale ? new Date(Date.now() - 60000).toISOString() : now])) });

@@ -51,6 +51,8 @@ type AirportRequestOptions = {
   timeoutMs?: number;
 };
 
+type AirportRequestResult = { outcome: AnyRecord; airport?: CachedAirport };
+
 const DEFAULT_CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_ERROR_RETRY_MS = 30 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
@@ -204,7 +206,7 @@ function createMsfsFacilitiesGeometryProvider(
   options: ProviderOptions = {},
 ): AnyRecord {
   const cache = new Map<string, CachedAirport>();
-  const pending = new Set<string>();
+  const pending = new Map<string, Promise<AirportRequestResult>>();
   const cacheTtlMs = Math.max(1000, Number(options.cacheTtlMs || DEFAULT_CACHE_TTL_MS));
   const errorRetryMs = Math.max(1000, Math.min(cacheTtlMs, Number(options.errorRetryMs || DEFAULT_ERROR_RETRY_MS)));
   const requestTimeoutMs = Math.max(500, Math.min(15000, Number(options.requestTimeoutMs || DEFAULT_REQUEST_TIMEOUT_MS)));
@@ -423,9 +425,12 @@ function createMsfsFacilitiesGeometryProvider(
     // Keep the last good geometry through a pending refresh even if LRU eviction
     // removes its cache entry. It is released with this request's promise chain.
     const previous = cachedEntry(icao);
-    if (pending.has(icao)) {
-      return Promise.resolve({ ok: false, icao, error: 'pending' });
-    }
+    const receive = ({ outcome, airport }: AirportRequestResult) => {
+      if (airport) receiveAirport?.(airport);
+      return outcome;
+    };
+    const inFlight = pending.get(icao);
+    if (inFlight) return inFlight.then(receive);
     if (!isBridgeUsable()) {
       return Promise.resolve({ ok: false, icao, error: 'bridge_unavailable' });
     }
@@ -439,7 +444,17 @@ function createMsfsFacilitiesGeometryProvider(
       }
     }
 
-    pending.add(icao);
+    // Background acquisition and user requests share one transport operation.
+    // Each waiter receives this response's geometry, even after cache eviction.
+    let settle!: (result: AirportRequestResult) => void;
+    const shared = new Promise<AirportRequestResult>((resolve) => { settle = resolve; });
+    pending.set(icao, shared);
+    const finish = (message: AnyRecord) => {
+      let airport: CachedAirport | undefined;
+      const outcome = ingestAirport(message, icao, previous, (loaded) => { airport = loaded; });
+      if (pending.get(icao) === shared) pending.delete(icao);
+      settle({ outcome, airport });
+    };
     lastRequestIcao = icao;
     lastRequestAtMs = now();
     logThrottled(
@@ -450,28 +465,14 @@ function createMsfsFacilitiesGeometryProvider(
     const timeoutMs = Number.isFinite(Number(options.timeoutMs))
       ? Math.max(500, Math.min(15000, Number(options.timeoutMs)))
       : requestTimeoutMs;
-    let airportRequest: Promise<AnyRecord>;
     try {
-      airportRequest = bridge.requestFacilityAirport!(icao, { timeoutMs });
+      bridge.requestFacilityAirport!(icao, { timeoutMs })
+        .then((message) => finish(message || { ok: false, icao, error: 'empty_response' }))
+        .catch((err) => finish({ ok: false, icao, error: err?.message || String(err) }));
     } catch (err) {
-      const message = { ok: false, icao, error: err?.message || String(err) };
-      const outcome = ingestAirport(message, icao, previous);
-      pending.delete(icao);
-      return Promise.resolve(outcome);
+      finish({ ok: false, icao, error: err?.message || String(err) });
     }
-    return airportRequest
-      .then((message) => {
-        if (!message) {
-          return ingestAirport({ ok: false, icao, error: 'empty_response' }, icao, previous);
-        }
-        return ingestAirport(message, icao, previous, receiveAirport);
-      })
-      .catch((err) => {
-        const message = { ok: false, icao, error: err?.message || String(err) };
-        ingestAirport(message, icao, previous);
-        return message;
-      })
-      .finally(() => pending.delete(icao));
+    return shared.then(receive);
   }
 
   function prefetchAirport(icaoValue: unknown): void {
@@ -506,7 +507,7 @@ function createMsfsFacilitiesGeometryProvider(
       ),
       cachedIcaos,
       errorIcaos,
-      pendingIcaos: [...pending].sort().slice(0, 20),
+      pendingIcaos: [...pending.keys()].sort().slice(0, 20),
       lastRequestIcao,
       lastRequestAtMs,
       lastOutcome,

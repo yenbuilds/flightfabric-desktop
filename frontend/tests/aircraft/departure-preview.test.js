@@ -132,3 +132,41 @@ test('a recapture rejected as the aircraft starts moving recovers by reading the
   f.advance(1000); assert.equal(f.sent.at(-1).operation, 'status');
   f.helper.destroy(); assert.equal(f.timers.size, 0);
 });
+
+for (const failure of ['response', 'timeout']) {
+  test(`failed refresh (${failure}) keeps its error while status only confirms the retained invalid plan`, () => {
+    const f = fixture(); f.advance(600); f.helper.receive(f.reply());
+    const route = f.snapshot().data.route;
+    f.advance(1000); f.helper.receive(f.reply(undefined, { pushbackPreview: { ...f.reply().pushbackPreview, valid: false }, preview: undefined, scene: undefined }));
+    f.advance(1000); assert.equal(f.sent.at(-1).operation, 'preview');
+    const error = failure === 'response' ? 'Could not load live simulator taxiways. timeout' : 'Pushback preview unavailable. Retrying…';
+    if (failure === 'response') f.helper.receive({ type: 'toolbarTaxiState', requestId: f.sent.at(-1).requestId, ok: false, error });
+    else f.advance(12250);
+    f.advance(failure === 'response' ? 5250 : 3250); assert.equal(f.sent.at(-1).operation, 'status');
+    f.helper.receive(f.reply(undefined, { pushbackPreview: { id: '09', icao: 'TEST', runway: '09', phase: 'preview', valid: false },
+      preview: undefined, scene: undefined }));
+    assert.equal(f.snapshot().fresh, true, 'live pose is available on the retained reference route');
+    assert.equal(f.snapshot().data.route, route);
+    assert.equal(f.snapshot().error, error, 'a status reply has not recovered the failed planning operation');
+    f.advance(1000); assert.equal(f.sent.at(-1).operation, 'preview');
+    assert.equal(f.snapshot().error, error, 'retry loading must preserve the failure reason');
+    f.helper.receive(f.reply(undefined, { pushbackPreview: { ...f.reply().pushbackPreview, id: 'replacement' } }));
+    assert.equal(f.snapshot().error, '');
+    assert.equal(f.snapshot().data.pushbackPreview.id, 'replacement');
+    f.helper.destroy(); assert.equal(f.timers.size, 0);
+  });
+}
+
+test('a new destination, aircraft or connection retires retained preview failures', () => {
+  for (const next of [{ runway: '27' }, { profileKey: 'other' }, { profileRevision: 2 }, { connected: false }]) {
+    const f = fixture(); f.advance(600);
+    const request = f.sent.at(-1);
+    f.helper.receive({ type: 'toolbarTaxiState', requestId: request.requestId, ok: false, error: 'Previous preview failed.' });
+    assert.equal(f.snapshot().error, 'Previous preview failed.');
+    f.helper.update({ ...f.context, ...next });
+    assert.equal(f.snapshot().error, '');
+    assert.equal(f.snapshot().data, null);
+    assert.equal(f.helper.receive(f.reply(request)), false, 'a retired reply must not restore the old context');
+    f.helper.destroy(); assert.equal(f.timers.size, 0);
+  }
+});

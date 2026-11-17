@@ -1,6 +1,6 @@
-# FlightFabric 0.13.2 · Public Alpha
+# FlightFabric 0.13.3 · Public Alpha
 
-## [Download for Windows (.exe)](https://github.com/yenbuilds/flight-fabric/releases/download/v0.13.2/FlightFabric.Setup.0.13.2.exe)
+## [Download for Windows (.exe)](https://github.com/yenbuilds/flight-fabric/releases/download/v0.13.3/FlightFabric.Setup.0.13.3.exe)
 
 **Public alpha · Free · Windows 64-bit · Microsoft Flight Simulator 2024**
 
@@ -16,26 +16,24 @@ toolbar panel**, choose **Update** or **Reinstall**, then restart the simulator.
 
 ## What's new
 
-- **More reliable voice:** improve altitude and lighting recognition, recognize "engage approach", and give spoken word endings more time after push-to-talk release.
-- **Shorter commands:** say settings such as "altitude thirteen thousand" without "set", and use "turnoff lights on/off" or "runway lights on/off".
-- **Clearer lighting:** separate panel backlighting, flood/task lights and flight-display brightness on supported Airbus aircraft.
-- **Simpler setup:** reduce text in Settings and make phone connection instructions and pairing prompts easier to follow.
+- **Phone CDU:** improve keypad fit around browser controls and screen edges, keeping keys reachable on shorter screens.
+- **Taxi and pushback:** fix shared airport-data loading, keep useful errors visible during retries, and clear errors when changing aircraft.
+- **Fenix A320:** fix taxi/pushback dimension loading when aircraft files are spread across shared packages.
+- **PMDG 777:** add HDG/TRK SEL by button or voice, and keep MCP buttons disabled while their commands are pending.
 
 <details>
 <summary><strong>More improvements</strong></summary>
 
-### Voice commands
+### PMDG 777 heading selection
 
-FlightFabric shows the interpreted command before its result and asks for a
-retry when a recording cannot finish. Incomplete recordings are discarded.
-Voice commands use your desktop microphone; phone and tablet cockpit controls
-remain available through the browser.
+Use **HDG/TRK SEL** or say **"engage heading select"** to request the selected
+heading or track mode. **HDG HOLD** remains a separate control. The request
+preserves the heading/track reference and selected target.
 
-### Cockpit lighting
+### Taxi and pushback feedback
 
-Separate lighting controls are available on Fenix, FlyByWire, Headwind A330 and
-iniBuilds A350 aircraft. Combined cockpit lighting remains available as a preset
-and an explicit voice command.
+The app and MSFS toolbar retain the reason a pushback preview is unavailable
+while retrying. Switching aircraft clears errors left by the previous aircraft.
 
 </details>
 
@@ -46,6 +44,9 @@ Aircraft support is still developing, and not every command has been verified
 in a live simulator session. An unconfirmed approach-selection message does not
 establish that the aircraft captured the approach; check the flight mode annunciator.
 The PMDG 737 Mach target control requires the cockpit speed window to be in Mach mode.
+The new PMDG 777 heading/track select request remains unverified in a live
+simulator session. Its result confirms the request was sent, not that SEL mode
+engaged; the SDK does not provide an independent SEL indication.
 
 Pushback and Autotaxi remain experimental and depend on the aircraft and airport
 scenery. Some stands still require the simulator's pushback controls. Voice
@@ -66,11 +67,11 @@ X-Plane are not currently supported.
 <details>
 <summary><strong>Installation help and optional file verification</strong></summary>
 
-Download `FlightFabric.Setup.0.13.2.exe`. GitHub's **Source code** archives are for
+Download `FlightFabric.Setup.0.13.3.exe`. GitHub's **Source code** archives are for
 developers; the installer is all you need to use FlightFabric.
 
 The current alpha is unsigned, so Windows may show **Windows protected your
-PC**. Select **More info**, check for `FlightFabric.Setup.0.13.2.exe` with **Unknown
+PC**. Select **More info**, check for `FlightFabric.Setup.0.13.3.exe` with **Unknown
 publisher**, and select **Run anyway** only if you downloaded it from the
 official link above. If that option is unavailable or Windows reports a threat,
 stop and report the warning; do not disable Windows security protections.
@@ -80,7 +81,7 @@ GitHub shows the installer's SHA-256 checksum beside the file in **Assets**.
 </details>
 
 [Getting started](https://github.com/yenbuilds/flight-fabric#readme) ·
-[Licence](https://github.com/yenbuilds/flight-fabric/blob/v0.13.2/LICENSE.md) ·
-[Third-party notices](https://github.com/yenbuilds/flight-fabric/blob/v0.13.2/THIRD_PARTY_NOTICES.md)
+[Licence](https://github.com/yenbuilds/flight-fabric/blob/v0.13.3/LICENSE.md) ·
+[Third-party notices](https://github.com/yenbuilds/flight-fabric/blob/v0.13.3/THIRD_PARTY_NOTICES.md)
 
 Thank you to everyone supporting FlightFabric through feedback, testing and donations.

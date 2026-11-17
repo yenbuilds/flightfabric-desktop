@@ -83,6 +83,7 @@ const TEST_STEPS = [
   ['node', ['tests/scripts/test-vue-interactions.js']],
   // Native mouse/touch input catches focus-dismissal races that DOM .click()
   // and keyboard-only component checks cannot reproduce. Builds run above.
+  ['node', ['--test', 'tests/scripts/test-workbench-browser-lifecycle.js']],
   ['node', ['tests/scripts/test-app-workbench-browser.js']],
   ['node', ['tests/scripts/test-mobile-voice-browser.js']],
   ['node', ['--test', 'tests/scripts/test-phone-voice-disabled.js']],

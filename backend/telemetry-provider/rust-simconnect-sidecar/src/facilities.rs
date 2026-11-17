@@ -386,7 +386,7 @@ impl AirportFacilityRequest {
                 "parkings": (0..self.taxi_parking_count as Dword).filter_map(|id| self.taxi_parkings.get(&id)).collect::<Vec<_>>(),
             },
             "elapsedMs": self.age_ms(),
-            "timestampIso": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "timestampIso": crate::protocol::timestamp_iso(crate::protocol::TimestampPrecision::Seconds),
         })
     }
 }

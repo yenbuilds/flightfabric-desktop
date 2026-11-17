@@ -1962,7 +1962,7 @@ try {
     const profiles = listBundledProfileSources();
     assert.equal(profiles.length, Object.keys(baseline.profiles).length);
     for (const source of profiles) {
-      assert.equal(require('node:crypto').createHash('sha256').update(JSON.stringify(projectPreSurfaceCorrectionProfile(source.rawProfile, executionBaseline.requestedControls))).digest('hex'),
+      assert.equal(require('node:crypto').createHash('sha256').update(JSON.stringify(projectPreSurfaceCorrectionProfile(source.rawProfile, executionBaseline))).digest('hex'),
         baseline.profiles[source.profileKey].rawSha256, source.profileKey + ' differs from the independent baseline');
     }
 

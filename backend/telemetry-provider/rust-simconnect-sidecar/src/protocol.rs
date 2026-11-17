@@ -17,6 +17,25 @@ pub(crate) const MAX_STDIN_LINE_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_PENDING_STDIN_COMMANDS: usize = 64;
 pub(crate) const MAX_COMMANDS_PER_TICK: usize = 64;
 
+// Wire timestamps remain UTC with a Z suffix and the existing precision for
+// each message. This boundary owns formatting, independently of local time zones.
+#[derive(Clone, Copy)]
+pub(crate) enum TimestampPrecision {
+    Seconds,
+    Milliseconds,
+}
+
+pub(crate) fn timestamp_iso(precision: TimestampPrecision) -> String {
+    format_timestamp(jiff::Timestamp::now(), precision)
+}
+
+fn format_timestamp(timestamp: jiff::Timestamp, precision: TimestampPrecision) -> String {
+    match precision {
+        TimestampPrecision::Seconds => format!("{timestamp:.0}"),
+        TimestampPrecision::Milliseconds => format!("{timestamp:.3}"),
+    }
+}
+
 // A subscription accepts the current expression form and the legacy `simvar`
 // field. `reference` provides one compatibility view to the rest of the crate.
 #[derive(Debug, Clone, Deserialize)]

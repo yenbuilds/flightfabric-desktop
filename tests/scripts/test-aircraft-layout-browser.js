@@ -1204,14 +1204,20 @@ async function browser() {
         assert.match(await evaluate(`return document.querySelector('[data-cdu-modal] a').href;`), /^http:\/\/127\.0\.0\.1:8083\/$/);
       } else {
         await ready('[data-cdu-modal] .cdu-entry-keys');
-        for (const [width, height] of [[1440, 1000], [1440, 700], [1440, 600], [430, 932], [390, 844], [390, 700], [360, 640], [320, 568], [320, 480], [568, 320], [667, 375], [844, 320], [844, 390]]) {
+        for (const [width, height] of [
+          [1440, 1000], [1440, 700], [1440, 600], [430, 932], [412, 780], [393, 713],
+          [390, 844], [390, 700], [390, 696], [390, 689], [390, 690], [375, 690],
+          [360, 800], [360, 690], [360, 640], [320, 690], [320, 568], [320, 480],
+          [568, 320], [667, 375], [844, 320], [844, 390],
+        ]) {
           // Short or landscape phones keep thumb-sized keys and a readable
           // display and let the keypad scroll instead; everything else fits.
           const landscape = width >= 700 && height <= 500;
           const scrollPanel = (width < 700 && height < 560) || (landscape && height < 360)
             || (!landscape && width > 600 && height < 650);
-          const compact = landscape || height < 800;
-          const minKeyHeight = landscape ? 32 : 40;
+          const fitPhone = width <= 600 && height >= 690;
+          const compact = landscape || (height < 800 && !fitPhone);
+          const minKeyHeight = landscape || fitPhone ? 32 : 40;
           win.setContentSize(width, height);
           // Hidden Electron windows can defer viewport-unit/media-query updates.
           await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
@@ -1279,7 +1285,7 @@ async function browser() {
           assert.equal(measurements.cells, 14);
           assert.ok(measurements.minKey[0] >= 44 && measurements.minKey[1] >= minKeyHeight - .5, `${id} CDU ${width}x${height} keypad touch targets (min ${measurements.minKey}, need 44x${minKeyHeight})`);
           // Line-select keys follow the display's row pitch, so they are a little shorter than keypad keys on the smallest phones.
-          assert.ok(measurements.minLineKey[0] >= 44 && measurements.minLineKey[1] >= (landscape ? 32 : 36) - .5, `${id} CDU ${width}x${height} line-select touch targets (min ${measurements.minLineKey})`);
+          assert.ok(measurements.minLineKey[0] >= 44 && measurements.minLineKey[1] >= (landscape ? 32 : fitPhone ? 30 : 36) - .5, `${id} CDU ${width}x${height} line-select touch targets (min ${measurements.minLineKey})`);
           assert.match(measurements.screen, /PERF INIT|APPR/);
           if (id.startsWith('pmdg-')) {
             assert.match(measurements.screen, /▯▯▯\.▯\/24/);
@@ -1336,6 +1342,43 @@ async function browser() {
         } return start;`);
         assert.equal(await evaluate(`return [...document.querySelectorAll('.cdu-entry-keys button')].every(button => !button.disabled);`), true, 'type-ahead leaves the touch keypad enabled');
         assert.deepEqual(await settled(`return layoutTest.cduSent.slice(${typeAheadStart}).filter(message => message.type === 'sendCduKey').map(message => message.key);`, keys => keys.length >= 4), ['K', 'L', 'A', 'X'], 'fast taps arrive in order');
+        // Match the reported iPhone's usable Safari height, independently of
+        // the layout viewport. Also account for safe-area space and panning.
+        win.setContentSize(390, 844);
+        await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+        for (const [visibleHeight, bottomInset, offsetTop] of [[844, 0, 0], [730, 34, 0], [690, 0, 12], [696, 0, 0]]) {
+          await evaluate(`document.documentElement.style.setProperty('--ff-visual-viewport-height', '${visibleHeight}px');
+            document.documentElement.style.setProperty('--ff-visual-viewport-offset-top', '${offsetTop}px');
+            document.querySelector('.cdu-dialog').style.paddingBottom = '${bottomInset}px';`);
+          await win.webContents.capturePage();
+          const fit = await settled(`const dialog = document.querySelector('.cdu-dialog').getBoundingClientRect();
+            const keypad = document.querySelector('.cdu-keypad');
+            const keys = [...document.querySelectorAll('.cdu-key')];
+            return {
+              top: dialog.top, bottom: dialog.bottom,
+              scrolls: keypad.scrollHeight > keypad.clientHeight + 1,
+              visible: keys.every(key => {
+                const r = key.getBoundingClientRect();
+                return r.top >= ${offsetTop} && r.bottom <= ${offsetTop + visibleHeight - bottomInset}
+                  && document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === key;
+              }),
+            };`, fit => fit.top === offsetTop && fit.bottom <= offsetTop + visibleHeight && !fit.scrolls && fit.visible);
+          assert.deepEqual(fit, { top: offsetTop, bottom: offsetTop + visibleHeight, scrolls: false, visible: true },
+            `${id}: all keys fit Safari's ${visibleHeight}px visible height with ${bottomInset}px safe area and ${offsetTop}px offset`);
+          await evaluate(`await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));`);
+          fs.writeFileSync(path.join(OUTPUT, `${id}-cdu-safari-${visibleHeight}-${bottomInset}.png`), (await win.webContents.capturePage()).toPNG());
+        }
+        const lastKey = await evaluate(`const key = [...document.querySelectorAll('.cdu-entry-keys button')].at(-1);
+          const r = key.getBoundingClientRect(); return { id: key.dataset.key, x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), start: layoutTest.cduSent.length };`);
+        for (const type of ['touchStart', 'touchEnd']) await Promise.all([
+          win.webContents.debugger.sendCommand('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchStart' ? [{ x: lastKey.x, y: lastKey.y }] : [] }),
+          win.webContents.capturePage(),
+        ]);
+        assert.equal(await settled(`return layoutTest.cduSent.slice(${lastKey.start}).find(message => message.type === 'sendCduKey')?.key;`, key => key === lastKey.id), lastKey.id,
+          `${id}: the bottom keypad row accepts a touch tap`);
+        await evaluate(`document.documentElement.style.removeProperty('--ff-visual-viewport-height');
+          document.documentElement.style.removeProperty('--ff-visual-viewport-offset-top');
+          document.querySelector('.cdu-dialog').style.removeProperty('padding-bottom');`);
         win.setContentSize(320, 568);
         await win.webContents.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, deviceScaleFactor: 1, mobile: false });
         await win.webContents.capturePage(); await wait(100);

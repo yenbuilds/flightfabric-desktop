@@ -396,6 +396,98 @@ test('PMDG 777 SDK profile resolves without an app agreement or acceptance recor
   }
 });
 
+test('777 heading select preserves the dial reference and acknowledges only the push transport', async () => {
+  const original = profileLoader.getActiveProfileId();
+  try {
+    for (const profileKey of [PMDG_777_PROFILE_KEY, 'bundled/msfs/pmdg-777-200er',
+      'bundled/msfs/pmdg-777-200lr', 'bundled/msfs/pmdg-777f']) {
+      for (const reference of ['HDG', 'TRK']) {
+        profileLoader.setActiveProfile(profileKey);
+        const revision = profileLoader.getActiveProfileRevision();
+        const provider = new SimConnectTelemetryProvider();
+        provider._connected = true;
+        provider._systemState = { sim: 1 };
+        provider._data = { userInput: true };
+        // HOLD can already be selected. It must neither suppress SEL nor be
+        // reused as proof that the different requested mode was selected.
+        const snapshot = { adapterId: 'clientdata-manifest', status: 'running', snapshotSequence: 1,
+          updatedAt: new Date().toISOString(), normalized: { automation: {
+            ap: { modes: { hdg: true }, headingMode: reference, selected: { headingDeg: 270 } },
+          } } };
+        const events = [];
+        let acknowledgePress;
+        const bridge = { getSnapshot: () => ({ status: 'running' }),
+          sendSdkEvent(name, value) {
+            events.push({ name, value });
+            return value === 0x20000000 ? new Promise(resolve => { acknowledgePress = resolve; }) : Promise.resolve({ ok: true });
+          } };
+        provider._lvarBridge = bridge;
+        provider._ensureControlWriteBridge = async () => bridge;
+        provider._sdkBridge = { getSnapshot: () => snapshot, isDataConnected: () => true };
+        const execute = (commandId, input = {}) => executeAircraftCommand(provider, { commandId, input,
+          profileKey, profileRevision: revision }, { profile: profileLoader.loadProfile(profileKey),
+          profileRevision: revision, requireProfileToken: true, capabilities: provider.getAircraftControlCapabilities() });
+        const pending = execute('flightGuidance.headingSelect.engage');
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(events.length, 1, 'waiting for the press acknowledgement');
+        assert.equal((await execute('flightGuidance.headingSelect.engage')).code, 'action_in_progress');
+        assert.equal((await execute('flightGuidance.heading.set', { value: 280 })).code, 'action_in_progress', 'the dial and its push share ownership');
+        acknowledgePress({ ok: true });
+        const result = await pending;
+        assert.equal(result.ok, true, result.error);
+        assert.equal(result.transportAcknowledged, true);
+        assert.equal(result.confirmedValue, undefined);
+        assert.notEqual(result.noOp, true);
+        assert.deepEqual(events, [{ name: '#69850', value: 0x20000000 }, { name: '#69850', value: 0x00020000 }]);
+        assert.equal(snapshot.normalized.automation.ap.headingMode, reference);
+        assert.equal(snapshot.normalized.automation.ap.selected.headingDeg, 270);
+        assert.equal((await execute('flightGuidance.headingSelect.engage')).code, 'action_cooldown');
+        assert.equal(events.length, 2, 'no automatic or immediate duplicate press');
+        assert.equal(provider._aircraftIntegrationActionsInFlight.size, 0);
+      }
+    }
+  } finally { profileLoader.setActiveProfile(original); }
+});
+
+test('777 heading select rejects unavailable transport and never promotes failed or retired requests', async () => {
+  for (const outcome of ['disconnected', 'wrong-adapter', 'press-failed', 'release-failed', 'exception', 'profile', 'disconnect-after']) {
+    const provider = new SimConnectTelemetryProvider();
+    stubPmdg777SdkIntegration(provider);
+    let current = true, connected = outcome !== 'disconnected';
+    const getConfig = provider._getActiveAircraftIntegrationConfig.bind(provider);
+    provider._getActiveAircraftIntegrationConfig = (...args) => current ? getConfig(...args) : null;
+    const snapshot = { adapterId: outcome === 'wrong-adapter' ? 'other-sdk' : 'clientdata-manifest', status: 'running' };
+    provider._sdkBridge = { getSnapshot: () => snapshot, isDataConnected: () => connected };
+    const events = [];
+    const bridge = { getSnapshot: () => ({ status: 'running' }),
+      async sendSdkEvent(name, value) {
+        events.push({ name, value });
+        if (outcome === 'press-failed' && value === 0x20000000) return { ok: false };
+        if (value === 0x00020000) {
+          if (outcome === 'release-failed') return { ok: false };
+          if (outcome === 'profile') current = false;
+          if (outcome === 'disconnect-after') connected = false;
+        }
+        return { ok: true, sendId: events.length };
+      },
+      findRecentSimConnectException(sendIds) {
+        assert.deepEqual(sendIds, [1, 2], 'late rejection is correlated to the actual press/release sends');
+        return outcome === 'exception' ? { exception: 1 } : null;
+      },
+    };
+    provider._lvarBridge = bridge;
+    provider._ensureControlWriteBridge = async () => bridge;
+    const result = await provider.executeAircraftControlAction({ type: 'aircraft-integration', name: PMDG_777_ADAPTER_ID }, {
+      profileKey: PMDG_777_PROFILE_KEY, profileRevision: PMDG_777_PROFILE_REVISION, request: { actionId: 'afds.headingSelect.engage' },
+    });
+    assert.equal(result.ok, false, outcome);
+    assert.notEqual(result.transportAcknowledged, true, outcome);
+    assert.equal(result.confirmedValue, undefined);
+    assert.equal(events.length, ['disconnected', 'wrong-adapter'].includes(outcome) ? 0 : outcome === 'press-failed' ? 1 : 2, outcome);
+    assert.equal(provider._aircraftIntegrationActionsInFlight.size, 0, 'terminal failure releases the control lock');
+  }
+});
+
 test('PMDG 777 two-state controls dispatch one complete mouse click and require newer SDK readback', async () => {
   const provider = new SimConnectTelemetryProvider();
   const sdkSnapshot: any = {

@@ -91,16 +91,14 @@ test('every advertised exact flap target has a reviewed lever source rather than
   ].sort(), 'fixed flap coverage must not disappear silently');
 });
 
-test('reported heading selected transcript resolves to the 737 HDG SEL button action', async () => {
+test('reported heading selected transcript resolves to the 737 and 777 SEL button action', async () => {
   const { interpretAircraftVoiceCommand: interpret } = await import('../../frontend/src/voice/command-interpreter.js');
   for (const profileId of [...families['pmdg-737'], ...families['pmdg-777']]) {
     const profile = loader.loadProfile(`bundled/msfs/${profileId}`), options = { profile, capabilities };
     const catalogue = buildAircraftControlCapabilities(profile, options).aircraftCommands;
-    const supported = families['pmdg-737'].includes(profileId);
     for (const phrase of ['engage heading select', 'ENGAGE HEADING SELECTED', 'heading select', 'heading selected']) {
       const voice = interpret(phrase, catalogue);
-      assert.equal(voice.ok, supported, `${profileId}: ${phrase}`);
-      if (!supported) continue;
+      assert.equal(voice.ok, true, `${profileId}: ${phrase}`);
       assert.equal(voice.commandId, 'flightGuidance.headingSelect.engage');
       assert.deepEqual(voice.input, {});
       const resolved = resolveAircraftCommand(voice, options);

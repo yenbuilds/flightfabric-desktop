@@ -513,3 +513,97 @@ for (const failure of ['failed response', 'empty runways'] as const) {
     } finally { io.dispose(); }
   });
 }
+
+test('taxi callers join background Facilities acquisition and retain their response across eviction', async () => {
+  const io = transport();
+  const provider = createMsfsFacilitiesGeometryProvider(io.bridge, { logger: null, cacheMaxEntries: 1 });
+  try {
+    provider.prefetchAirport('TST1');
+    const first = provider.loadTaxiAirport('TST1', null), second = provider.loadTaxiAirport('TST1', null);
+    assert.equal(io.sent.length, 1, 'all callers must share one native request');
+    assert.deepEqual(provider.getDiagnosticSnapshot().pendingIcaos, ['TST1']);
+    const other = provider.probeAirport('TST2');
+    const taxiways = { complete: true, points: [{ id: 0, x: 10, z: 20 }], paths: [] };
+    io.reply({ requestId: io.sent[0].requestId, airport: { lat: 37, lon: -122, elevationFt: 200 }, taxiways });
+    io.reply({ icao: 'TST2', runways: [{ ...runway, icao: 'TST2' }] });
+    const [a, b] = await Promise.all([first, second, other]);
+    assert.equal(provider._cache.has('TST1'), false);
+    assert.deepEqual(a.graph, taxiways);
+    assert.deepEqual(b.graph, taxiways);
+    assert.deepEqual(a.origin, { lat: 37, lon: -122 });
+    assert.deepEqual(provider.getDiagnosticSnapshot().pendingIcaos, []);
+  } finally { io.dispose(); }
+});
+
+for (const failure of ['response', 'timeout', 'disconnect'] as const) {
+  test(`shared taxi acquisition settles every waiter after ${failure} and allows recovery`, async (t) => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2026, 10, 6) });
+    const io = transport();
+    const provider = createMsfsFacilitiesGeometryProvider(io.bridge, { logger: null });
+    try {
+      provider.prefetchAirport('TST1');
+      const waiting = Promise.allSettled([provider.loadTaxiAirport('TST1', null), provider.loadTaxiAirport('TST1', null)]);
+      assert.equal(io.sent.length, 1);
+      if (failure === 'response') io.reply({ ok: false, error: 'facilities_unavailable' });
+      if (failure === 'timeout') t.mock.timers.tick(4000);
+      if (failure === 'disconnect') io.bridge._rejectPendingFacilityRequests('disconnected');
+      const results = await waiting;
+      for (const result of results) {
+        assert.equal(result.status, 'rejected');
+        if (result.status === 'rejected') {
+          assert.match(result.reason.message, /facilities_unavailable|timeout|disconnected/);
+          assert.doesNotMatch(result.reason.message, /pending/);
+        }
+      }
+      assert.deepEqual(provider.getDiagnosticSnapshot().pendingIcaos, []);
+      const recovered = provider.loadTaxiAirport('TST1', null);
+      assert.equal(io.sent.length, 2);
+      io.reply({ airport: { lat: 37, lon: -122 }, taxiways: { complete: true, points: [], paths: [] } });
+      assert.equal((await recovered).graph.complete, true);
+    } finally { io.dispose(); }
+  });
+}
+
+test('shared acquisition normalizes empty responses and synchronous bridge errors', async () => {
+  for (const response of [null, { ok: true, runways: [] }, new Error('bridge_stopped')]) {
+    const provider = createMsfsFacilitiesGeometryProvider({
+      getSnapshot: () => ({ status: 'running' }),
+      requestFacilityAirport: () => {
+        if (response instanceof Error) throw response;
+        return Promise.resolve(response);
+      },
+    }, { logger: null });
+    const outcome = await provider.probeAirport('TST1');
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.error, response === null ? 'empty_response' : response instanceof Error ? 'bridge_stopped' : 'empty_facility_response');
+    assert.deepEqual(provider.getDiagnosticSnapshot().pendingIcaos, []);
+  }
+});
+
+test('a late timed-out Facilities response cannot settle or overwrite a shared retry', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.UTC(2026, 10, 6) });
+  const io = transport();
+  const provider = createMsfsFacilitiesGeometryProvider(io.bridge, { logger: null });
+  try {
+    provider.prefetchAirport('TST1');
+    const timedOut = assert.rejects(provider.loadTaxiAirport('TST1', null), /timeout/);
+    const oldId = io.sent[0].requestId;
+    t.mock.timers.tick(4000);
+    await timedOut;
+    const first = provider.loadTaxiAirport('TST1', null), second = provider.loadTaxiAirport('TST1', null);
+    assert.equal(io.sent.length, 2, 'retry waiters still share one new native request');
+    io.reply({ requestId: oldId });
+    await flush();
+    assert.deepEqual(provider.getDiagnosticSnapshot().pendingIcaos, ['TST1']);
+    assert.equal(provider.getDiagnosticSnapshot().lastOutcome.error, 'timeout');
+    const taxiways = { complete: true, points: [{ id: 1, x: 30, z: 40 }], paths: [] };
+    io.reply({ airport: { lat: 37, lon: -122 }, taxiways });
+    const airports = await Promise.all([first, second]);
+    for (const airport of airports) assert.deepEqual(airport.graph, taxiways);
+    io.reply({ requestId: oldId, ok: false, error: 'obsolete_failure' });
+    await flush();
+    assert.equal(provider.getDiagnosticSnapshot().lastOutcome.ok, true);
+    assert.deepEqual(provider.getTaxiAirport('TST1', null).graph, taxiways);
+    assert.deepEqual(provider.getDiagnosticSnapshot().pendingIcaos, []);
+  } finally { io.dispose(); }
+});

@@ -1817,3 +1817,53 @@ test('toolbar ignores an old rollout final after aircraft change until a new tou
 });
 
 module.exports = { page, aircraftProfile };
+
+test('toolbar keeps a failed pushback reason stable across automatic retries and clears it on recovery', () => {
+  const f = taxiFixture();
+  const replyStatus = () => f.panel.receive({ type: 'pushbackState', requestId: f.pushbackRequests.at(-1).requestId,
+    ok: true, currentProfileKey: 'fixture', currentProfileRevision: 1, active: false, canStart: true });
+  f.timer.advance(600); replyStatus();
+  const error = 'No simple pushback onto a taxiway was found here. Use the simulator pushback to reposition.';
+  f.reply(f.departureRequests.at(-1), { ok: false, error });
+  assert.equal(f.get('taxi-pushback-reason').textContent, error);
+  const initialRequests = f.departureRequests.length;
+  for (let step = 0; step < 24; step++) {
+    f.timer.advance(250); replyStatus();
+    assert.equal(f.get('taxi-pushback-reason').textContent, error, 'loading a retry must not flash Finding pushback');
+  }
+  assert.equal(f.departureRequests.length, initialRequests + 1, 'the automatic retry still runs');
+  f.reply(f.departureRequests.at(-1), { aircraft: { x: 0, z: 0, headingDeg: 0, speedKts: 0 },
+    pushbackPreview: { id: 'recovered', icao: 'TEST', runway: '09', phase: 'preview', valid: true,
+      points: [{ x: 0, z: 0 }, { x: 0, z: -40 }], lengthM: 40, headingDeg: 0 }, preview: f.route, scene: f.scene });
+  assert.doesNotMatch(f.get('taxi-pushback-reason').textContent, /No simple|Finding pushback/);
+  assert.ok(f.pushbackRequests.every(request => request.operation === 'status'));
+  f.panel.destroy(); assert.equal(f.timer.pending, 0);
+});
+
+test('toolbar retains a refresh failure while live status locates the old invalid pushback plan', () => {
+  const f = taxiFixture();
+  const replyStatus = () => f.panel.receive({ type: 'pushbackState', requestId: f.pushbackRequests.at(-1).requestId,
+    ok: true, currentProfileKey: 'fixture', currentProfileRevision: 1, active: false, canStart: true });
+  const data = { aircraft: { x: 0, z: 40, headingDeg: 0, speedKts: 0 },
+    pushbackPreview: { id: 'shown', icao: 'TEST', runway: '09', phase: 'preview', valid: true,
+      points: [{ x: 0, z: 40 }, { x: 0, z: 0 }], lengthM: 40, headingDeg: 0 }, preview: f.route, scene: f.scene };
+  const invalid = { ...data, pushbackPreview: { id: 'shown', icao: 'TEST', runway: '09', phase: 'preview', valid: false },
+    preview: undefined, scene: undefined };
+  f.timer.advance(600); replyStatus(); f.reply(f.departureRequests.at(-1), data);
+  f.timer.advance(1000); replyStatus(); f.reply(f.departureRequests.at(-1), invalid);
+  f.timer.advance(1000); replyStatus(); assert.equal(f.departureRequests.at(-1).operation, 'preview');
+  const error = 'Could not load live simulator taxiways. timeout';
+  f.reply(f.departureRequests.at(-1), { ok: false, error });
+  for (let step = 0; step < 21; step++) { f.timer.advance(250); replyStatus(); }
+  assert.equal(f.departureRequests.at(-1).operation, 'status');
+  f.reply(f.departureRequests.at(-1), invalid);
+  assert.equal(f.get('taxi-pushback-reason').textContent, error);
+  assert.equal(f.get('taxi-pushback-action').disabled, true);
+  f.timer.advance(1000); replyStatus(); assert.equal(f.departureRequests.at(-1).operation, 'preview');
+  assert.equal(f.get('taxi-pushback-reason').textContent, error);
+  f.reply(f.departureRequests.at(-1), { ...data, pushbackPreview: { ...data.pushbackPreview, id: 'recovered' } });
+  assert.equal(f.get('taxi-pushback-reason').textContent, '');
+  assert.equal(f.get('taxi-pushback-action').disabled, false);
+  assert.ok(f.pushbackRequests.every(request => request.operation === 'status'));
+  f.panel.destroy(); assert.equal(f.timer.pending, 0);
+});

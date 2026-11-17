@@ -1,0 +1,29 @@
+{
+  "fields": {},
+  "actions": {
+    "afds.headingSelect.engage": {
+      "id": "afds.headingSelect.engage",
+      "guard": { "cooldownMs": 650, "groupId": "pmdg777.mcp.heading", "retry": "never" },
+      "routes": [{
+        "id": "pmdg777.afds.headingSelect.engage.sdk",
+        "transport": "sdk",
+        "adapter": "clientdata-manifest",
+        "command": "#69850",
+        "values": [536870912, 131072],
+        "confirmation": "transport-acknowledged"
+      }],
+      "verification": "untested"
+    }
+  },
+  "provenance": {
+    "type": "official-sdk",
+    "authority": "aircraft-vendor",
+    "access": "vendor-install",
+    "supportsActiveMappings": true,
+    "name": "PMDG 777 heading/track select push switch",
+    "url": "https://manuals.pmdg.com/777/introduction/index.html",
+    "retrievedAt": "2026-11-16",
+    "notes": "Installed 777-300ER 2.4.147 PMDG_777X_SDK.h defines EVT_MCP_HEADING_PUSH_SWITCH as 69632 + 218 (69850). The 77W_Cockpit_Behavior.xml switch_218_a HDG/TRK PUSH component defines a left press/release. afds.headingSelect.engage sends one SDK left press (0x20000000) and release (0x00020000), sharing the heading dial lock. This is distinct from the rotary EVT_MCP_HEADING_SELECTOR (71812), heading hold (69851), and the HDG/TRK reference toggle (69848). The current reference is preserved. MCP_Heading_Sw_Pushed reports momentary button motion; MCP_annunHDG_HOLD reports hold, neither confirms HDG/TRK SEL. The route acknowledges transport only and exposes no invented selected-mode field. Shared SDK family profiles remain untested for this action. See docs/APPROACH-CONTROLS-AIRCRAFT-COVERAGE.md."
+  },
+  "knownIssue": "Heading/track select sends the SDK push switch and reports only a request; the SDK has no independent SEL annunciation. Check the flight mode annunciator. Live acceptance is pending on all four variants."
+}

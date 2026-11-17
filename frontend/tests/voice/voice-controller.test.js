@@ -3034,6 +3034,7 @@ test('heading and approach feedback separates unconfirmed selection from rejecti
     ['pmdg-737', 'headingSelect', 'Heading select', 'engage heading select'],
     ['pmdg-737', 'approach', 'Approach', 'engage approach'],
     ['pmdg-777', 'headingHold', 'Heading hold', 'engage heading hold'],
+    ['pmdg-777', 'headingSelect', 'Heading select', 'engage heading select'],
     ['pmdg-777', 'approach', 'Approach', 'engage approach'],
   ]) {
     setActivePinia(createPinia());

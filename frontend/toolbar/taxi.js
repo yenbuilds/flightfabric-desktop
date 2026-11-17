@@ -170,17 +170,18 @@ var FlightFabricToolbarTaxi = (() => {
   function createDeparturePreview({ send, changed, now = Date.now, setTimeout, clearTimeout }) {
     const prefix = "departure-" + now() + "-" + Math.random().toString(36).slice(2) + "-";
     let context = {}, key = "", revision = 0, sequence = 0, pending = null, timer = null;
-    let data = null, error = "", lastReply = -Infinity, nextAt = 0, destroyed = false;
+    let data = null, error = "", previewError = "", lastReply = -Infinity, nextAt = 0, destroyed = false;
     const usable = () => context.connected && context.visible !== false && context.enabled !== false && context.profileKey && /^[A-Z0-9]{3,8}$/.test(context.icao) && /^(0?[1-9]|[12][0-9]|3[0-6])[LRC]?$/.test(context.runway);
     const fresh = () => Boolean(data == null ? void 0 : data.aircraft) && now() - lastReply < 2e3;
     function publish() {
-      changed({ data, error, loading: (pending == null ? void 0 : pending.operation) === "preview", fresh: fresh() });
+      changed({ data, error: error || previewError, loading: (pending == null ? void 0 : pending.operation) === "preview", fresh: fresh() });
     }
     function reset() {
       revision++;
       pending = null;
       data = null;
       error = "";
+      previewError = "";
       lastReply = -Infinity;
       nextAt = now() + 400;
       publish();
@@ -227,7 +228,11 @@ var FlightFabricToolbarTaxi = (() => {
       if (destroyed || !usable()) return;
       if (usable()) {
         if (pending && now() - pending.at > (pending.operation === "preview" ? 12e3 : 2e3)) {
-          error = "Pushback preview unavailable. Retrying\u2026";
+          const message = "Pushback preview unavailable. Retrying\u2026";
+          if (pending.operation === "preview") {
+            previewError = message;
+            error = "";
+          } else error = message;
           pending = null;
           nextAt = now() + 3e3;
         }
@@ -241,11 +246,16 @@ var FlightFabricToolbarTaxi = (() => {
       timer = setTimeout(tick, 250);
     }
     function receive(message) {
+      var _a;
       if (destroyed || !usable() || (message == null ? void 0 : message.type) !== "toolbarTaxiState" || !pending || pending.revision !== revision || pending.requestId !== message.requestId) return false;
-      const requestedAt = pending.at;
+      const { at: requestedAt, operation } = pending;
       pending = null;
       if (message.ok !== true) {
-        error = message.error || "Pushback preview unavailable.";
+        const failure = message.error || "Pushback preview unavailable.";
+        if (operation === "preview") {
+          previewError = failure;
+          error = "";
+        } else error = failure;
         lastReply = -Infinity;
         nextAt = now() + 5e3;
         publish();
@@ -268,6 +278,8 @@ var FlightFabricToolbarTaxi = (() => {
       } else data = null;
       lastReply = requestedAt;
       error = "";
+      const speed = (_a = data == null ? void 0 : data.aircraft) == null ? void 0 : _a.speedKts;
+      if (operation === "preview" || fresh() && ((preview == null ? void 0 : preview.valid) || ["connecting", "pushing", "stopping", "complete"].includes(preview == null ? void 0 : preview.phase) || Number.isFinite(speed) && speed > 0.5)) previewError = "";
       nextAt = now() + (["connecting", "pushing", "stopping"].includes(preview == null ? void 0 : preview.phase) ? 250 : 750);
       publish();
       return true;
@@ -452,7 +464,7 @@ var FlightFabricToolbarTaxi = (() => {
       const sameDestination = state.icao === context.icao && ((_b = state.runway) == null ? void 0 : _b.replace(/^0/, "")) === ((_c = context.runway) == null ? void 0 : _c.replace(/^0/, ""));
       const completed = !active() && ((plan == null ? void 0 : plan.phase) === "complete" || state.status === "complete" && sameDestination);
       const canStart = Boolean(usable() && !context.disabled && !active() && !pending && !completed && fresh() && state.canStart && destination && preview.fresh && (plan == null ? void 0 : plan.valid));
-      const reason = error || (active() ? !fresh() ? "Waiting for pushback status\u2026" : state.reason : completed ? TAXI_COPY.complete : !context.enabled ? context.unavailableReason || "Pushback is unavailable on this connection." : !destination ? "Choose your departure airport and runway." : !fresh() ? "Waiting for live pushback status." : preview.loading ? "Finding pushback path\u2026" : preview.error || state.unavailableReason || (preview.data && !preview.fresh ? "Waiting for live pushback preview." : state.reason));
+      const reason = error || (active() ? !fresh() ? "Waiting for pushback status\u2026" : state.reason : completed ? TAXI_COPY.complete : !context.enabled ? context.unavailableReason || "Pushback is unavailable on this connection." : !destination ? "Choose your departure airport and runway." : !fresh() ? "Waiting for live pushback status." : preview.error || state.unavailableReason || (preview.loading && !preview.data ? "Finding pushback path\u2026" : preview.data && !preview.fresh ? "Waiting for live pushback preview." : state.reason));
       return { state, active: active(), owned, pending, fresh: fresh(), completed, canStart, reason: reason || "" };
     }
     const publish = () => changed(snapshot());
@@ -536,6 +548,10 @@ var FlightFabricToolbarTaxi = (() => {
       if (changedAircraft || leaving) {
         const lostActive = owned && active() && !normalized.connected;
         reset();
+        if (changedAircraft) {
+          error = "";
+          statusError = false;
+        }
         if (lostActive) error = "Connection lost. Pushback will stop; take control in the cockpit.";
       }
       if (!active() && (previous.icao !== context.icao || previous.runway !== context.runway || !wasUsable && usable())) error = "";

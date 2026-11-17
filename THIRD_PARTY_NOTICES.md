@@ -260,20 +260,21 @@ source as third-party code.
 - FlightFabric licence and provenance: GNU AGPL version 3
   (`AGPL-3.0-only`); see the sidecar `README.md` and the historical-provenance
   notice above.
-- Direct crates: `chrono`, `libloading`, `serde`, and `serde_json`.
+- Direct crates: `jiff`, `libloading`, `serde`, and `serde_json`.
 - Windows release dependency closure from the committed `Cargo.lock`:
-  `chrono` 0.4.44, `num-traits` 0.2.19, `windows-link` 0.2.1,
+  `jiff` 1.0.0, `jiff-core` 1.0.0, `windows-link` 0.2.1,
   `libloading` 0.8.9, `serde` 1.0.228, `serde_core` 1.0.228,
   `serde_derive` 1.0.228, `proc-macro2` 1.0.106, `unicode-ident` 1.0.24,
   `quote` 1.0.45, `syn` 2.0.117, `serde_json` 1.0.149, `itoa` 1.0.18,
   `memchr` 2.8.0, and `zmij` 1.0.21.
-- Licences: `libloading` is ISC; `memchr` is Unlicense OR MIT;
+- Licences: `libloading` is ISC; `jiff`, `jiff-core`, and `memchr` are Unlicense OR MIT;
   `zmij` is MIT; `unicode-ident` is (MIT OR Apache-2.0) AND Unicode-3.0;
   the other listed crates are MIT OR Apache-2.0. FlightFabric relies on the
   MIT option where an OR choice is offered. The required Unicode-3.0 terms for
   `unicode-ident` still apply.
-- Additional build-only crate: `autocfg` 1.5.0 (Apache-2.0 OR MIT), used by
-  `num-traits` to detect compiler capabilities; it is not a runtime library.
+- Jiff enables only its `std` feature; timezone database, system-zone discovery,
+  logging and optional serialization features are disabled. Optional or
+  other-target dependencies in the lockfile are not part of this Windows closure.
 - Packaging: the compiled sidecar executable is included in official desktop
   releases for SimConnect telemetry, facilities, LVar, and supported SDK
   ClientData/event transport. Procedural-macro crates are build inputs whose
@@ -628,8 +629,7 @@ notices:
 - lazy-val: Vladimir Krivosheev (MIT)
 - Tailwind CSS: Copyright (c) Tailwind Labs, Inc.
 - QRCode for JavaScript: Copyright (c) 2009 Kazuhiko Arase
-- Rust `chrono`: Copyright (c) 2014-2026 Kang Seonghoon and contributors
-- Rust `num-traits`: Copyright (c) 2014 The Rust Project Developers
+- Rust `jiff` and `jiff-core`: Copyright (c) 2015 Andrew Gallant
 - Rust `windows-sys` and `windows-link`: Copyright (c) Microsoft Corporation
 - Rust `serde`, `serde_core`, `serde_derive`, and `serde_json`: Erick
   Tryzelaar, David Tolnay, and contributors

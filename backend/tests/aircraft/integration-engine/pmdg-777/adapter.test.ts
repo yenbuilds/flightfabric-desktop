@@ -47,7 +47,7 @@ test('PMDG 777 adapter shares one official-SDK contract across exact family prof
 
   assert.equal(PMDG_777_INTEGRATION.presentation.templateId, 'pmdg-777');
   assert.equal(Object.keys(PMDG_777_INTEGRATION.fields).length, 180);
-  assert.equal(Object.keys(PMDG_777_INTEGRATION.actions).length, 345);
+  assert.equal(Object.keys(PMDG_777_INTEGRATION.actions).length, 346);
   assert.deepEqual(PMDG_777_INTEGRATION.fields['lights.beacon'].sources[0], {
     route: { type: 'sdk', adapter: 'clientdata-manifest', path: 'lights.beacon' },
     decode: { type: 'boolean', trueValues: [true], falseValues: [false] },
@@ -269,6 +269,18 @@ test('PMDG 777 adapter shares one official-SDK contract across exact family prof
     if (action.id.startsWith('lighting.') && action.id.endsWith('.set')) assert.equal(action.guard.cooldownMs, 0);
     else assert.ok(action.guard.cooldownMs >= 650, `${action.id} must retain the PMDG cooldown`);
     for (const route of action.routes) {
+      if (action.id === 'afds.headingSelect.engage') {
+        assert.deepEqual(action.guard, { groupId: 'pmdg777.mcp.heading', cooldownMs: 650, retry: 'never' });
+        assert.equal(action.verification, 'untested');
+        assert.equal(action.routes.length, 1);
+        assert.equal(route.transport, 'sdk');
+        assert.equal(route.adapter, 'clientdata-manifest');
+        assert.equal(route.command, '#69850', 'push switch, not the heading rotary or HOLD');
+        assert.deepEqual(route.values, [0x20000000, 0x00020000]);
+        assert.equal(route.confirmation, 'transport-acknowledged');
+        assert.equal(route.readback, undefined, 'HOLD and button animation cannot confirm SEL');
+        continue;
+      }
       if (['surveillance.squawk.set', 'surveillance.ident.activate'].includes(action.id)) {
         assert.equal(route.transport, 'simconnect-sequence');
         assert.equal(route.precondition.freshness, 'field');

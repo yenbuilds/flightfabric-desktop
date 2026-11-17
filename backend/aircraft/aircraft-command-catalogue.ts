@@ -2034,6 +2034,7 @@ const PMDG_777_AIRCRAFT_COMMAND_CONFIGURATION: AircraftCommandConfiguration = Ob
     fixed('flightGuidance.lnav.engage', aircraftAction('afds.lnav.engage')),
     fixed('flightGuidance.vnav.engage', aircraftAction('afds.vnav.engage')),
     fixed('flightGuidance.flightLevelChange.engage', aircraftAction('afds.levelChange.engage')),
+    fixed('flightGuidance.headingSelect.engage', aircraftAction('afds.headingSelect.engage')),
     fixed('flightGuidance.headingHold.engage', aircraftAction('afds.headingHold.engage')),
     fixed('flightGuidance.verticalSpeed.engage', aircraftAction('afds.verticalSpeed.engage')),
     fixed('flightGuidance.altitudeHold.engage', aircraftAction('afds.altitudeHold.engage')),

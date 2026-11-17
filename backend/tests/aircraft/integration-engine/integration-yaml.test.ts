@@ -119,6 +119,32 @@ test('777 surface baseline projection preserves unrelated mappings and rejects u
   assert.equal(definition.actions['controls.speedbrake.half'].routes[0].readback.expectedValue, 75, 'projection never mutates production definitions');
 });
 
+test('777 heading-select projection rejects unreviewed writes, confirmation and provenance changes', () => {
+  const { projectPreExecutionCatalogue, projectPreSurfaceCorrectionProfile } = require(join(process.cwd(), 'tests/helpers/pre-execution-catalogue-projection.js'));
+  const definition = defaultAircraftIntegrationRegistry.getById('pmdg-777');
+  for (const mutate of [
+    value => { value.actions['afds.headingSelect.engage'].routes[0].command = '#69851'; },
+    value => { value.actions['afds.headingSelect.engage'].routes[0].values.reverse(); },
+    value => { value.actions['afds.headingSelect.engage'].guard.retry = 'once'; },
+    value => { value.actions['afds.headingSelect.engage'].routes[0].confirmation = 'readback'; },
+    value => { value.actions['afds.headingSelect.engage'].verification = 'verified'; },
+  ]) {
+    const changed = structuredClone(definition); mutate(changed);
+    assert.throws(() => projectPreExecutionCatalogue(changed), /reviewed control addition/);
+  }
+  const profile = readBundledProfile('bundled/msfs/pmdg-777');
+  const changedSource = structuredClone(profile);
+  changedSource.provenance.sources.find(source => source.name === 'PMDG 777 heading/track select push switch').notes += ' Unreviewed claim.';
+  assert.throws(() => projectPreSurfaceCorrectionProfile(changedSource), /reviewed 777 heading-select provenance/);
+  const changedLimit = structuredClone(profile);
+  changedLimit.provenance.verification.knownIssues = changedLimit.provenance.verification.knownIssues.filter(issue => !issue.startsWith('Heading/track select'));
+  assert.throws(() => projectPreSurfaceCorrectionProfile(changedLimit), /reviewed 777 heading-select limitation/);
+  const unrelated = structuredClone(profile);
+  unrelated.provenance.verification.knownIssues.push('Unreviewed extra limitation.');
+  assert.ok(projectPreSurfaceCorrectionProfile(unrelated).provenance.verification.knownIssues.includes('Unreviewed extra limitation.'));
+  assert.ok(definition.actions['afds.headingSelect.engage'], 'projection never mutates the production definition');
+});
+
 test('full YAML definitions preserve immutable ordered routes and reject duplicate registrations', () => {
   const definition = loadAircraftIntegrationDefinition(join(ORIGINAL_SOURCE_DIR, '../aircraft-integrations', 'fenix-a32x.yaml'), 'fenix-a32x');
   const action = definition.actions['lights.wing.on'];

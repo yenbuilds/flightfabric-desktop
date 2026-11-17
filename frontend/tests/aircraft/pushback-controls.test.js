@@ -89,3 +89,49 @@ test('command failures stay visible across successful status polling until the u
   assert.match(f.snapshot().reason, /preview has expired/);
   f.helper.request('start'); assert.doesNotMatch(f.snapshot().reason, /preview has expired/); f.helper.destroy();
 });
+
+test('automatic preview retries keep the blocking reason visible until recovery', () => {
+  const f = fixture(); f.reply();
+  const error = 'No simple pushback onto a taxiway was found here. Use the simulator pushback to reposition.';
+  for (const loading of [false, true, false, true]) {
+    f.helper.update({ ...f.context, preview: { data: null, fresh: false, loading, error } });
+    assert.equal(f.snapshot().reason, error);
+    assert.equal(f.snapshot().canStart, false);
+  }
+  f.helper.update(f.context);
+  assert.equal(f.snapshot().reason, '');
+  assert.equal(f.snapshot().canStart, true);
+  f.helper.destroy();
+});
+
+test('preview loading shows initial progress but does not hide a readiness reason or replace a displayed plan', () => {
+  const f = fixture(); f.reply();
+  f.helper.update({ ...f.context, preview: { data: null, fresh: false, loading: true } });
+  assert.match(f.snapshot().reason, /Finding pushback/);
+  f.advance(1000); f.reply(undefined, { canStart: false, unavailableReason: 'Release the parking brake to push back.' });
+  assert.match(f.snapshot().reason, /parking brake/);
+  f.advance(1000); f.reply();
+  f.helper.update({ ...f.context, preview: { ...f.context.preview, loading: true, fresh: false } });
+  assert.doesNotMatch(f.snapshot().reason, /Finding pushback/);
+  assert.equal(f.snapshot().canStart, false);
+  f.helper.destroy();
+});
+
+test('changing aircraft retires command errors and ignores replies belonging to the previous aircraft', () => {
+  for (const next of [{ profileKey: 'other' }, { profileRevision: 2 }]) {
+    const f = fixture(); f.reply(); f.helper.request('start');
+    const retired = f.sent.at(-1);
+    f.reply(retired, { ok: false, error: 'Pushback preview changed. Wait for the updated path before starting.' });
+    assert.match(f.snapshot().reason, /preview changed/);
+    const context = { ...f.context, ...next, preview: { ...f.context.preview,
+      data: { pushbackPreview: { ...f.context.preview.data.pushbackPreview, id: 'new-aircraft-plan' } } } };
+    f.helper.update(context); f.advance(250);
+    f.reply(undefined, { currentProfileKey: context.profileKey, currentProfileRevision: context.profileRevision,
+      reason: 'Ready to push back.' });
+    assert.equal(f.snapshot().reason, 'Ready to push back.');
+    assert.equal(f.snapshot().canStart, true);
+    f.reply(retired, { ok: false, error: 'Old aircraft command failed.' });
+    assert.equal(f.snapshot().reason, 'Ready to push back.');
+    f.helper.destroy(); assert.equal(f.timers.size, 0);
+  }
+});

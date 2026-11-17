@@ -2936,6 +2936,22 @@ integration:
             expectedValue: true
             timeoutMs: 2500
       verification: untested
+    afds.headingSelect.engage:
+      id: afds.headingSelect.engage
+      guard:
+        cooldownMs: 650
+        groupId: pmdg777.mcp.heading
+        retry: never
+      routes:
+        - id: pmdg777.afds.headingSelect.engage.sdk
+          transport: sdk
+          adapter: clientdata-manifest
+          command: "#69850"
+          values:
+            - 536870912
+            - 131072
+          confirmation: transport-acknowledged
+      verification: untested
     afds.headingHold.engage:
       id: afds.headingHold.engage
       guard:
@@ -9167,6 +9183,23 @@ profiles:
             newer GEAR_Lever readback via controls.gearDown and the existing 2.5-second confirmation window,
             matching SDK/profile checks, 650 ms cooldown and no retry or fallback. See
             docs/PMDG-777-GEAR-VALIDATION.md for canonical retest evidence and variant limits."
+        - type: official-sdk
+          authority: aircraft-vendor
+          access: vendor-install
+          supportsActiveMappings: true
+          name: PMDG 777 heading/track select push switch
+          url: https://manuals.pmdg.com/777/introduction/index.html
+          retrievedAt: 2026-11-16
+          notes: Installed 777-300ER 2.4.147 PMDG_777X_SDK.h defines EVT_MCP_HEADING_PUSH_SWITCH
+            as 69632 + 218 (69850). The 77W_Cockpit_Behavior.xml switch_218_a HDG/TRK PUSH
+            component defines a left press/release. afds.headingSelect.engage sends one SDK
+            left press (0x20000000) and release (0x00020000), sharing the heading dial lock.
+            This is distinct from the rotary EVT_MCP_HEADING_SELECTOR (71812), heading hold
+            (69851), and the HDG/TRK reference toggle (69848). The current reference is preserved.
+            MCP_Heading_Sw_Pushed reports momentary button motion; MCP_annunHDG_HOLD reports
+            hold, neither confirms HDG/TRK SEL. The route acknowledges transport only and
+            exposes no invented selected-mode field. Shared SDK family profiles remain
+            untested for this action. See docs/APPROACH-CONTROLS-AIRCRAFT-COVERAGE.md.
         - type: official-docs
           name: PMDG MSFS 2020/2024 product family
           url: https://pmdg.com/msfs-2020-2024/
@@ -9185,6 +9218,9 @@ profiles:
           - Gear UP/DOWN has live 777-300ER evidence and shared-profile automated coverage; the 200ER, 200LR,
             and 777F variants still require in-aircraft testing. See docs/PMDG-777-GEAR-VALIDATION.md.
           - SDK readback requires EnableDataBroadcast=1.
+          - Heading/track select sends the SDK push switch and reports only a request; the SDK
+            has no independent SEL annunciation. Check the flight mode annunciator. Live
+            acceptance is pending on all four variants.
           - The expanded control catalog is structurally checked against the installed SDK but remains
             unverified until each switch is confirmed in the simulator.
           - Guarded emergency, maintenance, door, and momentary controls remain intentionally unavailable.
