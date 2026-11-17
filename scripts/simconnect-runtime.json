@@ -1,24 +1,26 @@
 {
   "schemaVersion": 1,
-  "sdkVersion": "1.7.3",
-  "dllSha256": "b10de7adf4c62e5f66c89dd6d01b64091bbbcec83411cfe191d6b85fbee61d15",
+  "sdkVersion": "1.8.2",
+  "dllSha256": "8f386401a990eb5dce561cd9ecebf4c3e7565f4501ed48e1785edf2467feee41",
   "source": {
-    "url": "https://sdk.flightsimulator.com/msfs2024/files/installers/1.7.3/MSFS2024_SDK_Core_Installer_1.7.3.zip",
-    "archiveSha256": "aae63270c9420e099ffa2d21565c267f0603f8e226cf2c8ab2ca8966f6a052bf",
-    "installerSha256": "837b6002f1c9486e084f6b3073fa740c321731d9aaeb6ab05e91428d7c02a7d5"
+    "url": "https://sdk.flightsimulator.com/msfs2024/files/installers/1.8.2/MSFS2024_SDK_Core_Installer_1.8.2.zip",
+    "archiveSha256": "1dd575e47a9c4de3efff39bd0f9ab180602059f4a1c16913f659d018a91b5a0a",
+    "installerSha256": "adaa338823806817788d18c7790487860c54184d236640b69ec0182146ff144c"
   },
   "verification": {
-    "date": "2026-09-24",
-    "archiveContentMd5Matched": true,
+    "date": "2026-11-18",
+    "archiveContentMd5Provided": false,
     "installerSignatureStatus": "Valid",
     "installerSigner": "CN=Microsoft Flight Simulator, O=Microsoft Flight Simulator, L=Redmond, S=Washington, C=US",
-    "installerSignerThumbprint": "56F451016047C7718510DC804441C32A77875EB5",
+    "installerSignerThumbprint": "98042ABF6A88276899A735F9C01EA7729B9C9BC9",
     "installerSignerIssuer": "CN=Microsoft ID Verified CS AOC CA 03, O=Microsoft Corporation, C=US",
     "signToolVerification": "Passed Authenticode policy, signing chain and timestamp; zero warnings and errors.",
     "dllMatchedSignedMsiFileHash": true,
     "nativeWindowsInstallerFileHashMatched": true,
-    "defenderScan": "Targeted scan completed on 2026-09-24 with no threats found; remediation disabled.",
+    "defenderScan": "Targeted scan completed on 2026-11-18 with no threats found; remediation disabled.",
     "architecture": "x64",
+    "loaderSymbolsPresent": 24,
+    "exportsRemoved": [],
     "method": "Read-only ZIP/CAB extraction; installer and DLL were not executed."
   }
 }
